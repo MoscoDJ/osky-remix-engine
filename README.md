@@ -93,6 +93,16 @@ de procedencia (`generated_content`) se conservan enteros salvo con `--adopt-leg
 
 Ver `docs/AGENT.md` y `docs/CODEX_WORKFLOW.md`.
 
+## Versión DJ
+
+```bash
+uv run osky-remix extend mi-remix --from idea --branch dj --intro-bars 32 --outro-bars 32
+uv run osky-remix cues mi-remix --rev dj --audio master.wav --out cues.xml   # Rekordbox XML (o --format csv|json)
+```
+
+Intro y outro de solo ritmo en frases enteras, sin voz y a tempo estable; beatgrid y cues por
+sección exactos desde el mapa de tempo. Ver `docs/DJ.md`.
+
 ## Pruebas
 
 ```bash
@@ -107,6 +117,7 @@ uv run pytest -m ui             # interfaz con Playwright (requiere frontend com
 - `docs/ARCHITECTURE.md` — separación de responsabilidades
 - `docs/UI.md` — interfaz web local
 - `docs/AGENT.md` — evaluador, acciones, planificador, variaciones (hito 2)
+- `docs/DJ.md` — extended mix, `insert_time`, cues y beatgrid para DJ
 - `docs/CODEX_WORKFLOW.md` — cómo trabaja Claude con el motor
 - `docs/AUDIO_ENGINE.md` — composición, plantillas, renderizador, congelado y calibración
 - `docs/ANALYSIS.md` — análisis, separación, confianza y verificación

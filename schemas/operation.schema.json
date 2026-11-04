@@ -446,6 +446,34 @@
       "title": "DeleteClip",
       "type": "object"
     },
+    "InsertTime": {
+      "additionalProperties": false,
+      "description": "Inserta compases vacíos en ``at_tick``: todo lo que empieza ahí o después se desplaza.\n\nEs \"insertar tiempo\" de un DAW: clips, automatización, marcadores, tempo y compás se mueven\nen bloque y su sonido relativo no cambia. Por eso es la única operación que desplaza pistas\nbloqueadas: las mueve rígidamente sin alterar su contenido (``verify`` lo comprueba). Se\nrechaza si cortaría un clip o si no cae en un límite de compás.",
+      "properties": {
+        "op": {
+          "const": "insert_time",
+          "default": "insert_time",
+          "title": "Op",
+          "type": "string"
+        },
+        "at_tick": {
+          "minimum": 0,
+          "title": "At Tick",
+          "type": "integer"
+        },
+        "ticks": {
+          "exclusiveMinimum": 0,
+          "title": "Ticks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at_tick",
+        "ticks"
+      ],
+      "title": "InsertTime",
+      "type": "object"
+    },
     "LockTrack": {
       "additionalProperties": false,
       "properties": {
@@ -1369,6 +1397,7 @@
         "add_track": "#/$defs/AddTrack",
         "delete_automation": "#/$defs/DeleteAutomation",
         "delete_clip": "#/$defs/DeleteClip",
+        "insert_time": "#/$defs/InsertTime",
         "lock_track": "#/$defs/LockTrack",
         "move_clip": "#/$defs/MoveClip",
         "register_asset": "#/$defs/RegisterAsset",
@@ -1451,6 +1480,9 @@
       },
       {
         "$ref": "#/$defs/SetTempo"
+      },
+      {
+        "$ref": "#/$defs/InsertTime"
       },
       {
         "$ref": "#/$defs/SetMeter"

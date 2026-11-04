@@ -370,6 +370,8 @@ def rearrange(p: Project, tpl: dict, ctx: ComposeContext, bars: int, variant: st
     Un proyecto sin ``generated_content`` (creado antes del registro de procedencia) se
     conserva entero salvo que ``adopt_legacy`` indique tratar su contenido como generado.
     """
+    if p.meta.get("dj_extended"):
+        raise ValueError("la revisión es una versión extendida DJ: varía la revisión original y vuelve a extenderla")
     parts = generate_parts(tpl, ctx, bars, prefix, variant)
     existing = {t.id: t for t in p.tracks}
     free = {t for t in TRACK_ORDER if t in existing and not existing[t].locked}

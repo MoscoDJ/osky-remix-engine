@@ -35,3 +35,9 @@ revisiones fijas y conservación manual; aislamiento, cancelación, concurrencia
 Resultados y límites en `docs/COMPATIBILITY.md`. Benchmark de memoria en `docs/AUDIO_ENGINE.md`.
 La CI remota está preparada y requiere ejecución/configuración en GitHub. La aprobación
 artística por escucha no forma parte de los resultados automáticos.
+
+
+## Versión DJ (2026-11-04)
+
+`extend` (extended mix con intro/outro de solo ritmo) y `cues` (beatgrid y cues para Rekordbox,
+CSV o JSON). Ver `docs/DJ.md`.
