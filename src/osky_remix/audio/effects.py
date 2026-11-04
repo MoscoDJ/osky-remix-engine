@@ -10,6 +10,7 @@ uri -> parámetros (los marcados con * son automatizables):
   gain: db*
   sidechain: depth*, release_ms  (fuente: Track.sidechain_from)
   stereo: width* (0 = mono, 1 = igual, 2 = doble), mono_below_hz (graves en mono)
+  deesser: threshold_db*, range_db*, freq_hz, width_oct, ratio, attack_ms, release_ms
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from pedalboard import (Chorus, Compressor, Delay, Gain, HighShelfFilter, Ladder
                         PeakFilter, Reverb)
 from scipy.signal import butter, sosfiltfilt
 
-EFFECTS = {"highpass", "lowpass", "eq", "compressor", "reverb", "delay", "chorus", "gain", "sidechain", "stereo"}
+EFFECTS = {"highpass", "lowpass", "eq", "compressor", "reverb", "delay", "chorus", "gain", "sidechain", "stereo", "deesser"}
 BLOCK = 512
 
 # parámetro -> (atributo de pedalboard, conversión)
@@ -32,6 +33,7 @@ AUTOMATABLE = {
     "gain": {"db": ("gain_db", float)},
     "sidechain": {"depth": None},
     "stereo": {"width": None},
+    "deesser": {"threshold_db": None, "range_db": None},
 }
 
 
@@ -75,6 +77,12 @@ def apply_effect(uri: str, p: dict, x: np.ndarray, sr: int, bpm: float, sidechai
             return x
         depth = automation.get("depth", p.get("depth", 0.6))
         return x * duck_envelope(sidechain_src, sr, depth, p.get("release_ms", 140))[:, None]
+    if uri == "deesser":
+        from .deesser import deess
+        return deess(x, sr, threshold_db=automation.get("threshold_db", p.get("threshold_db", -30.0)),
+                     range_db=automation.get("range_db", p.get("range_db", 6.0)), freq_hz=p.get("freq_hz", 6700.0),
+                     width_oct=p.get("width_oct", 0.85), ratio=p.get("ratio", 8.0),
+                     attack_ms=p.get("attack_ms", 0.5), release_ms=p.get("release_ms", 60.0))
     if uri == "stereo":
         return stereo(x, sr, automation.get("width", p.get("width", 1.0)), p.get("mono_below_hz", 0))
     plugs = _plugins(uri, p, bpm)

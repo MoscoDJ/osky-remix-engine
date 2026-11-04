@@ -5,6 +5,7 @@ from .analyze import analyze, ingest, reference, separate
 from .doctor import doctor
 from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
+from .vocals import transpose
 
 app = typer.Typer(help="Osky Remix Engine: producción de remixes headless operada por Claude.",
                   no_args_is_help=True, add_completion=False)
@@ -18,6 +19,7 @@ app.command("render")(render)
 app.command("graph")(graph)
 app.command("compare")(compare)
 app.command("export")(export)
+app.command("transpose")(transpose)
 app.add_typer(package_app, name="package")
 app.command("evaluate")(evaluate_cmd)
 app.command("improve")(improve_cmd)

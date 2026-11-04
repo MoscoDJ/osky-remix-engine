@@ -53,7 +53,7 @@ solo de trompeta, puente con cortes, coro 2 y outro con "Nada quedó… solo tu 
 |---|---|
 | Clips de audio | desde el asset, offset/longitud en muestras, ganancia, fades; remuestreo si hace falta |
 | Instrumentos | primer plugin de la pista: Surge XT (DawDreamer) o integrado (`drums`, `fx`, `synth`) |
-| Efectos integrados | highpass, lowpass, eq, compressor, reverb, delay (en tiempos), chorus, gain, sidechain |
+| Efectos integrados | highpass, lowpass, eq, compressor, reverb, delay (en tiempos), chorus, gain, sidechain, stereo, deesser |
 | Enrutado | salidas a buses/master, envíos post-fader a retornos, sidechain desde otra pista |
 | Master | perfil de `mastering.dynamics` (LUFS objetivo + techo de true peak con lookahead) |
 | Salidas | premaster float32, master WAV 24 bits, stems post-fader float32, reporte JSON |
@@ -124,3 +124,62 @@ Benchmark reproducible: `uv run python scripts/benchmark_render.py --seconds 180
 En este equipo: 12.70 s y 2596.3 MiB RSS máximo, -14.00 LUFS, -11.46 dBTP. Fixture sintético
 con ocho pistas de audio, sin instrumentos externos: no predice el coste de plugins pesados.
 Se mantiene el procesamiento en memoria; dimensionar RAM antes de sesiones mayores.
+
+
+## Voz: de-esser y transposición
+
+### De-esser (`audio/deesser.py`, efecto integrado `deesser`)
+
+Banda dividida, sin latencia:
+
+| Parámetro | Por defecto | Detalle |
+|---|---|---|
+| `threshold_db`* | −30 | umbral sobre el RMS de la banda (dBFS, estéreo enlazado) |
+| `range_db`* | 6 | reducción máxima de la banda |
+| `freq_hz`, `width_oct` | 6700, 0.85 | centro y ancho de la banda (≈ 5–9 kHz) |
+| `ratio` | 8 | pendiente por encima del umbral (valores altos ≈ limitador) |
+| `attack_ms`, `release_ms` | 0.5, 60 | suavizado de la reducción en dB |
+
+La banda se aísla con un pasabanda Butterworth de fase cero (`sosfiltfilt`); el resto es
+`x − banda`, su complemento exacto, y solo la banda se multiplica por la ganancia. Así el audio
+no se retrasa (`LATENCY_SAMPLES = 0`) y fuera de la banda nada cambia. El detector usa
+ventanas centradas de 1 ms cada 32 muestras (un pequeño lookahead del detector, nunca del
+audio) y la ganancia se interpola a resolución de muestra. Sin sibilancia por encima del
+umbral la salida es idéntica bit a bit a la entrada. `threshold_db` y `range_db` aceptan
+automatización (`<plugin>.threshold_db`) por muestra.
+
+Pruebas (`tests/audio/test_deesser.py`): tono armónico 220–1760 Hz + ráfagas de ruido de
+6.5–7.5 kHz en tiempos conocidos. Las ráfagas bajan `range_db` ± 0.3 dB (3, 6 y 10 dB), la
+banda 200–2000 Hz cambia < 0.2 dB sin desfase, los bordes de las ráfagas no se mueven, la
+señal sin sibilancia queda intacta y el resultado es determinista.
+
+### Transposición (`audio/pitch.py`, `osky-remix transpose`)
+
+```bash
+uv run osky-remix transpose <proyecto> <sha> --semitones -2 [--no-formant] [--clip v1]
+uv run osky-remix transpose <proyecto> <sha> --to-key proyecto --analysis <sha-análisis> --clip v1
+uv run osky-remix transpose <proyecto> <sha> --to-key "C minor" --from-key "A minor"
+```
+
+- Rubber Band R3 (`--fine`), duración intacta (si difiere, se ajusta a la longitud exacta del
+  original para que los clips sigan siendo válidos) y formantes conservados (`-F`) por defecto.
+- No destructivo: el resultado es un asset **nuevo** con procedencia (`rubberband`, versión,
+  `semitones`, `formant`, `engine`, padre = asset original). En caché por (sha, semitonos,
+  opciones, versión de Rubber Band); repetir la misma transposición no vuelve a procesar.
+- `--to-key`: tonalidad destino (`proyecto` = `Project.key`, la que fija `compose` con
+  `set_key`). La de origen viene de `--from-key` o de `harmony.key` de un reporte de análisis.
+  `transposition_to_key` elige el desplazamiento mínimo en −6…+5: con modos iguales se alinean
+  las tónicas (A minor → C minor = +3); con modos distintos se compara la relativa
+  (A minor → C major = 0, mismas notas). El tritono se resuelve siempre hacia abajo
+  (F# minor → C minor = −6).
+- `--clip`: la misma revisión registra el asset y aplica `set_clip_asset`, que cambia solo el
+  asset del clip (posición, recorte, ganancia y fades se conservan) y exige la misma frecuencia
+  de muestreo y longitud suficiente. El asset original sigue registrado.
+
+Pruebas (`tests/audio/test_pitch.py`, `tests/unit/test_set_clip_asset.py`): 440 Hz + 2
+semitonos mide 493.88 Hz ± 0.5 % (`f0_median`), misma duración, original intacto (SHA),
+acierto de caché en la segunda llamada, distancias entre las 24 × 24 tonalidades.
+
+Corrección de afinación a escala: no implementada. Requiere desplazamiento variable en el tiempo
+(mapa de tono de Rubber Band) guiado por f0 por nota; queda pendiente hasta poder verificarla
+con fixtures de afinación conocida.
