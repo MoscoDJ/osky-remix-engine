@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# Canciones, stems, modelos y renders: fuera de git
+workspace/*
+!workspace/projects/
+workspace/projects/*
+!workspace/projects/.gitkeep
+
+*.wav
+*.flac
+*.mp3
+*.npy
+
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,48 @@
+[project]
+name = "osky-remix-engine"
+version = "0.0.1"
+description = "Motor de producción de remixes headless, modular y reproducible, operado por Claude."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    # CLI
+    "typer>=0.27",
+    "rich>=14",
+    "pydantic>=2.10",
+    # Audio I/O, DSP y análisis
+    "numpy>=1.26,<2.0",
+    "scipy>=1.13",
+    "soundfile>=0.13",
+    "pyloudnorm>=0.1.1",
+    "librosa>=0.10",
+    "pedalboard>=0.9.26",
+    "essentia>=2.1b6.dev1389",
+    # MIDI
+    "pretty_midi>=0.2.11",
+    "mido>=1.3",
+    # Transcripción
+    "basic-pitch[onnx]>=0.4.0",
+    "setuptools<81",        # basic-pitch/resampy importan pkg_resources (eliminado en setuptools 81)
+    # Host de plugins (candidato, sujeto a doctor)
+    "dawdreamer>=0.8.3",
+]
+
+[project.scripts]
+osky-remix = "osky_remix.cli.main:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osky_remix"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "compat: pruebas de compatibilidad que ejecutan herramientas reales (lentas)",
+]
