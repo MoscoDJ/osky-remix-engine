@@ -982,6 +982,34 @@
       "title": "SetAutomation",
       "type": "object"
     },
+    "SetClipAsset": {
+      "additionalProperties": false,
+      "description": "Cambia el asset de un clip de audio (p. ej. por su versión transpuesta), conservando\nposición, recorte, ganancia y fades. El asset anterior sigue registrado (no destructivo).",
+      "properties": {
+        "op": {
+          "const": "set_clip_asset",
+          "default": "set_clip_asset",
+          "title": "Op",
+          "type": "string"
+        },
+        "clip": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Clip",
+          "type": "string"
+        },
+        "asset": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Asset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip",
+        "asset"
+      ],
+      "title": "SetClipAsset",
+      "type": "object"
+    },
     "SetKey": {
       "additionalProperties": false,
       "properties": {
@@ -1378,6 +1406,7 @@
         "remove_track": "#/$defs/RemoveTrack",
         "replace_plugin": "#/$defs/ReplacePlugin",
         "set_automation": "#/$defs/SetAutomation",
+        "set_clip_asset": "#/$defs/SetClipAsset",
         "set_key": "#/$defs/SetKey",
         "set_master_profile": "#/$defs/SetMasterProfile",
         "set_meta": "#/$defs/SetMeta",
@@ -1424,6 +1453,9 @@
       },
       {
         "$ref": "#/$defs/DeleteClip"
+      },
+      {
+        "$ref": "#/$defs/SetClipAsset"
       },
       {
         "$ref": "#/$defs/TransposeMidi"

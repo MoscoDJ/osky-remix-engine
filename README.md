@@ -60,6 +60,7 @@ Métodos, confianza y verificación en `docs/ANALYSIS.md`.
 uv run osky-remix project branch mi-remix idea --from main
 uv run osky-remix compose mi-remix --analysis <sha> --vocals <sha-voz> --at 1:23.1 --bars 32 --branch idea
 uv run osky-remix render mi-remix --rev idea
+uv run osky-remix transpose mi-remix <sha-voz> --to-key proyecto --analysis <sha> --clip <clip>   # voz a la tonalidad
 ```
 
 Mezcla, A/B y entrega:

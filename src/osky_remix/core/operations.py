@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import Field
 
 from .models import (Asset, AudioClip, AutomationLane, Id, Marker, MeterPointM, MidiClip, MidiNote,
-                     PluginSlot, Project, Send, Strict, TempoPointM, Track, TrackKind)
+                     PluginSlot, Project, Send, Sha256, Strict, TempoPointM, Track, TrackKind)
 
 Author = Literal["user", "claude"]
 
@@ -287,6 +287,41 @@ class DeleteClip(Op):
         t.clips = [c for c in t.clips if c.id != self.clip]
 
 
+class SetClipAsset(Op):
+    """Cambia el asset de un clip de audio (p. ej. por su versión transpuesta), conservando
+    posición, recorte, ganancia y fades. El asset anterior sigue registrado (no destructivo)."""
+    op: Literal["set_clip_asset"] = "set_clip_asset"
+    clip: Id
+    asset: Sha256
+
+    def touches(self, p):
+        return {_clip(p, self.clip)[0].id}
+
+    def check(self, p, ctx):
+        _, c = _clip(p, self.clip)
+        _require(isinstance(c, AudioClip), "set_clip_asset solo aplica a clips de audio")
+        new = p.assets.get(self.asset)
+        _require(new is not None, "el clip referencia un asset no registrado")
+        old = p.assets[c.asset]
+        _require(new.sample_rate is None or old.sample_rate is None or new.sample_rate == old.sample_rate,
+                 f"el asset nuevo está a {new.sample_rate} Hz y el actual a {old.sample_rate} Hz: "
+                 "el recorte en muestras cambiaría de sentido")
+        _require(new.frames is None or c.source_offset + c.source_length <= new.frames,
+                 "el asset nuevo es más corto que el fragmento que usa el clip")
+
+    def apply(self, p):
+        _, c = p.find_clip(self.clip)
+        c.asset = self.asset
+
+    def verify(self, before, after):
+        _, old = before.find_clip(self.clip)
+        _, new = after.find_clip(self.clip)
+        _require(new.asset == self.asset, "el clip no quedó con el asset pedido")
+        _require(new.model_dump(exclude={"asset"}) == old.model_dump(exclude={"asset"}),
+                 "set_clip_asset cambió algo más que el asset")
+        _require(old.asset in after.assets, "el asset anterior dejó de estar registrado")
+
+
 class TransposeMidi(Op):
     op: Literal["transpose_midi"] = "transpose_midi"
     clip: Id
@@ -530,7 +565,7 @@ class RemoveMarker(Op):
 
 Operation = Annotated[
     Union[AddTrack, RemoveTrack, SetTrack, LockTrack, UnlockTrack, AddSend, RemoveSend, RegisterAsset, AddClip, MoveClip,
-          DeleteClip, TransposeMidi, SetMidiNotes, AddPlugin, ReplacePlugin, RemovePlugin, SetPluginParam,
+          DeleteClip, SetClipAsset, TransposeMidi, SetMidiNotes, AddPlugin, ReplacePlugin, RemovePlugin, SetPluginParam,
           SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, SetMeta, SetMasterProfile, AddMarker, RemoveMarker],
     Field(discriminator="op"),
 ]

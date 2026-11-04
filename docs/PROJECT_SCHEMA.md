@@ -36,7 +36,7 @@ ruteos circulares (salidas, envíos y sidechain).
 ## Operaciones (`core/operations.py`)
 
 `add_track`, `remove_track`, `set_track`, `lock_track`, `unlock_track`, `add_send`, `remove_send`, `register_asset`,
-`add_clip`, `move_clip`, `delete_clip`, `transpose_midi`, `set_midi_notes`, `add_plugin`,
+`add_clip`, `move_clip`, `delete_clip`, `set_clip_asset`, `transpose_midi`, `set_midi_notes`, `add_plugin`,
 `replace_plugin`, `remove_plugin`, `set_plugin_param`, `set_automation`, `delete_automation`,
 `set_tempo`, `set_meter`, `set_key`, `set_meta`, `set_master_profile`, `add_marker`, `remove_marker`.
 
