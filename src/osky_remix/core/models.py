@@ -30,6 +30,7 @@ class Strict(BaseModel):
 # ------------------------------------------------------------------ assets
 class AssetKind(str, Enum):
     original = "original"
+    working = "working"          # copia PCM float de trabajo derivada de un original
     stem = "stem"
     sample = "sample"
     render = "render"

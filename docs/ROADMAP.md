@@ -7,8 +7,8 @@ Cada etapa entrega una demostración funcional, pruebas automatizadas y document
 |---|---|---|
 | 0 | Auditoría del entorno: `osky-remix doctor` | **Completa** (13/13 PASS, 2026-11-03) |
 | 1 | Núcleo y CLI: proyectos, assets SHA-256, esquemas Pydantic, revisiones, operaciones atómicas, caché | **Completa** (2026-11-03) |
-| 2 | Análisis y separación: BPM, compás, tonalidad, estructura, stems, transcripción, reportes con confianza | Siguiente |
-| 3 | Producción musical: MIDI, síntesis (Surge XT), arreglos, voces, plantillas de género | |
+| 2 | Análisis y separación: BPM, compás, tonalidad, estructura, stems, transcripción, reportes con confianza | **Completa** (2026-11-04) |
+| 3 | Producción musical: MIDI, síntesis (Surge XT), arreglos, voces, plantillas de género | Siguiente |
 | 4 | Mezcla y render: grafo DSP, buses, sidechain, mastering por perfiles, exportación | |
 | 5 | Automatización con Claude: planificador, acciones, evaluador, variaciones, revisiones | |
 | 6 | Interfaz híbrida: timeline, mezclador, editor MIDI, A/B, control manual | |

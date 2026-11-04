@@ -3,7 +3,7 @@
 Motor de producción de remixes headless, modular, no destructivo y reproducible, operado por
 Claude desde una CLI, con interfaz web local para supervisión (etapa 6).
 
-Estado: **etapas 0 y 1 completas**. Ver `docs/ROADMAP.md`.
+Estado: **etapas 0, 1 y 2 completas**. Ver `docs/ROADMAP.md`.
 
 ## Requisitos del sistema (Ubuntu / Kubuntu)
 
@@ -34,16 +34,28 @@ uv run osky-remix project revert mi-remix <rev> -a user
 
 El contrato está en `docs/PROJECT_SCHEMA.md` y `schemas/`.
 
+## Análisis y separación
+
+```bash
+uv run osky-remix ingest mi-remix cancion.flac                  # original + copia de trabajo
+uv run osky-remix separate mi-remix <sha> -b demucs --lead-backing
+uv run osky-remix analyze mi-remix <sha> --stems <sha-reporte> --md analisis.md
+```
+
+Métodos, confianza y verificación en `docs/ANALYSIS.md`.
+
 ## Pruebas
 
 ```bash
-uv run pytest -m "not compat"   # unitarias, rápidas
+uv run pytest -m "not compat and not audio"   # unitarias, rápidas
+uv run pytest -m audio          # análisis sobre fixtures sintéticos (~1 min)
 uv run pytest -m compat         # capacidades reales (lentas)
 ```
 
 ## Documentación
 
 - `docs/ARCHITECTURE.md` — separación de responsabilidades
+- `docs/ANALYSIS.md` — análisis, separación, confianza y verificación
 - `docs/PROJECT_SCHEMA.md` — modelo, unidades, operaciones y revisiones
 - `docs/COMPATIBILITY.md` — resultados del doctor, tolerancias y hallazgos
 - `docs/ROADMAP.md` — etapas y compuertas

@@ -30,4 +30,9 @@ if ! command -v demucs >/dev/null; then
   uv tool install --python 3.12 demucs --with numpy --with soundfile --with torchcodec
 fi
 
+if ! command -v audio-separator >/dev/null; then
+  echo "== audio-separator (RoFormer, opcional: voz y lead/backing)"
+  uv tool install --python 3.12 "audio-separator[gpu]" --with audioread || echo "   (omitido: falló la instalación)"
+fi
+
 echo "== Listo. Ejecuta: uv run osky-remix doctor"

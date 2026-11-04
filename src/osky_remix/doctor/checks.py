@@ -455,6 +455,35 @@ def check_reproducibility(work: Path) -> dict:
                   stochastic_lufs_diff=round(lu, 4), stochastic_spectral_diff_db=round(spec, 3))
 
 
+# --------------------------------------------------------------------------- roformer
+def check_roformer(work: Path) -> dict:
+    from ..separation.quality import prepare_stems
+    from ..separation.roformer import RoformerSeparator, VOCALS_MODEL
+    sep = RoformerSeparator()
+    ok, why = sep.available()
+    if not ok:
+        return result("WARN", why + " (opcional: uv tool install 'audio-separator[gpu]' --with audioread)")
+    st = fx.band_mixture(8.0)
+    mix = np.stack([st["mixture"]] * 2, 1).astype(np.float32)
+    src = work / "mix.wav"
+    sf.write(src, mix, SR, subtype="FLOAT")
+    t = time.time()
+    res = sep.separate(src, work / "out", VOCALS_MODEL)
+    secs = time.time() - t
+    raw = {k: sf.read(str(v), dtype="float32", always_2d=True) for k, v in res.stems.items()}
+    prep, q = prepare_stems(mix, SR, raw)
+    inst = prep["instrumental"].mean(1)
+    corr = float(np.corrcoef(inst, mix.mean(1))[0, 1])
+    voc_rel = max(-120.0, _rms_db(prep["vocals"]) - _rms_db(mix))      # -inf no es JSON válido
+    good = q.reconstruction_snr_db >= 15 and corr >= 0.95 and voc_rel < -20
+    return result("PASS" if good else "FAIL",
+                  f"{res.model} en {secs:.1f}s ({res.device}); mezcla sin voz -> instrumental corr {corr:.3f}, "
+                  f"stem de voz {voc_rel:.1f} dB bajo la mezcla; reconstrucción {q.reconstruction_snr_db} dB, "
+                  f"ganancia corregida {q.gain_correction_db:+.2f} dB",
+                  device=res.device, seconds=round(secs, 1), instrumental_corr=round(corr, 4),
+                  vocals_rel_db=round(voc_rel, 1), reconstruction_snr_db=q.reconstruction_snr_db)
+
+
 # --------------------------------------------------------------------------- complementarios
 def check_essentia(work: Path) -> dict:
     import essentia.standard as es
@@ -525,6 +554,7 @@ CHECKS: list[Check] = [
     Check("ffmpeg", "FFmpeg (conversión y metadatos)", True, check_ffmpeg, 120),
     Check("mastering", "Mastering (LUFS, true peak, limitador)", True, check_mastering, 180),
     Check("reproducibility", "Reproducibilidad de render", True, check_reproducibility, 600),
+    Check("roformer", "RoFormer vía audio-separator (voz / lead-backing)", False, check_roformer, 900),
     Check("essentia", "Essentia (análisis complementario)", False, check_essentia, 180),
     Check("faust", "Faust (DSP programable)", False, check_faust, 120),
     Check("csound", "Csound (DSP programable)", False, check_csound, 120),

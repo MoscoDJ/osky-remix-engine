@@ -46,4 +46,5 @@ packages = ["src/osky_remix"]
 testpaths = ["tests"]
 markers = [
     "compat: pruebas de compatibilidad que ejecutan herramientas reales (lentas)",
+    "audio: análisis sobre fixtures sintéticos (CPU, ~1-2 min)",
 ]

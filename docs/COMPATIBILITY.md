@@ -16,6 +16,7 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
 | Rubber Band | 4.0.0 (apt `rubberband-cli`) |
 | FFmpeg | 8.0.1 |
 | Faust / Csound | apt; Faust se usa embebido vía DawDreamer |
+| audio-separator | 0.48.0 (`uv tool install 'audio-separator[gpu]' --with audioread`); RoFormer en CUDA |
 
 ## Criterios y tolerancias
 
@@ -55,3 +56,9 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
    Requiere `setuptools<81` (usa `pkg_resources`).
 7. **Csound** carga con un aviso inocuo (`liblinear_algebra.so: undefined symbol dorgqr_`).
 8. **TensorFlow** no se instala: Basic Pitch corre con el modelo ONNX.
+9. **audio-separator** 0.48 necesita `audioread` (no lo declara). Normaliza el pico a 0.9 y
+   escribe 16 bits; la ganancia se corrige midiendo contra la mezcla (`separation.quality`).
+10. **librosa beat_track** recorta beats débiles al inicio y final (`trim=True`): intros y outros
+    sin batería quedaban fuera de la rejilla; se extrapola la rejilla mientras haya audio.
+11. **Envolventes de ataque**: `aggregate=np.median` ignora el bombo (daba medio tempo) y el flujo
+    espectral marca el ataque 20-40 ms tarde; se usa envolvente multibanda + derivada de energía.

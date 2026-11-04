@@ -79,6 +79,7 @@
     "AssetKind": {
       "enum": [
         "original",
+        "working",
         "stem",
         "sample",
         "render",
