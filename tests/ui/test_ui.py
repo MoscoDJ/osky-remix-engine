@@ -180,3 +180,61 @@ def test_solo_button_changes_rendered_signal(page, server):
     assert np.any(r.output('kick'))
     assert not np.any(r.output('vox'))
     assert not np.any(r.output('pad'))
+
+
+def test_render_shows_visualization_panels(page, server):
+    open_app(page, server)
+    page.click("text=Renderizar")
+    page.wait_for_selector("[data-testid=visuals]", timeout=180000)
+    for testid in ("vis-markers-spec", "vis-markers-lufs", "vis-markers-corr"):
+        assert page.inner_text(f"[data-testid={testid}]").split() == ["intro", "voz", "drop"]
+    # marcadores en su tiempo: 'voz' empieza a 1/3 de los 12 compases (más la cola del render)
+    left = page.eval_on_selector("[data-testid=vis-markers-lufs] .vis-marker:nth-child(2)", "e => parseFloat(e.style.left)")
+    assert 20 < left < 34
+    assert "objetivo -16 LUFS" in page.inner_text(".visuals")          # perfil del proyecto: dynamic
+    spec = page.locator("[data-testid=vis-spectrogram]")
+    assert spec.get_attribute("data-rows") == "128" and int(spec.get_attribute("data-cols")) > 50
+    assert int(page.get_attribute("[data-testid=vis-lufs]", "data-points")) > 50
+    assert int(page.get_attribute("[data-testid=vis-corr]", "data-points")) > 50
+    # los canvas tienen dibujo real (no solo el elemento)
+    lit = page.evaluate("""() => ['vis-spectrogram', 'vis-lufs', 'vis-corr'].map(id => {
+        const c = document.querySelector(`[data-testid=${id}]`); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 150) n++; return n; })""")
+    assert all(n > 500 for n in lit), lit
+    rows = page.inner_text("[data-testid=vis-corr-sections]")
+    for lab in ("intro", "voz", "drop"):
+        assert lab in rows
+
+
+def test_blind_listening_records_verdict(page, server):
+    from osky_remix.storage.listening import ListeningStore
+    repo = server["repo"]
+    open_app(page, server)
+    page.click("nav.tabs >> text=Escucha ciega")
+    page.select_option("select[aria-label='escucha A']", "main")
+    page.select_option("select[aria-label='escucha B']", "alt")
+    page.click("text=Preparar escucha ciega")
+    page.wait_for_selector("[data-testid=wave-x][data-ready='1']", timeout=180000)
+    page.wait_for_selector("[data-testid=wave-y][data-ready='1']")
+    assert "main" not in page.inner_text("[data-testid=blind-session]")    # nada revela la identidad
+    page.click("[data-testid=blind-toggle]")
+    assert "Escuchando Y" in page.inner_text("[data-testid=blind-toggle]")
+    page.check("input[aria-label='prefiero x']")
+    page.click("button[aria-label='X 4']")
+    page.click("button[aria-label='Y 2']")
+    page.fill("textarea[aria-label=nota]", "X tiene más pegada")
+    page.click("text=Guardar y revelar")
+    page.wait_for_selector("[data-testid=reveal]")
+    v = ListeningStore.for_project(repo.root).verdicts()[0]
+    x_is_a = v["x_was"] == "a"
+    assert v["preferred"] == ("a" if x_is_a else "b")
+    assert (v["rating_a"], v["rating_b"]) == ((4, 2) if x_is_a else (2, 4))
+    assert v["rev_a"] == repo.head("main") and v["rev_b"] == repo.head("alt") and v["note"] == "X tiene más pegada"
+    reveal = page.inner_text("[data-testid=reveal]")
+    assert f"X era {v['x_was'].upper()}" in reveal and f"Preferiste {v['preferred'].upper()}" in reveal
+    row = page.locator(f"[data-testid=listening-log] tr[data-verdict='{v['id']}']")
+    row.wait_for()
+    cells = row.locator("td").all_inner_texts()
+    assert cells[1].startswith("main") and cells[2].startswith("alt") and cells[4] == v["preferred"].upper()
+    assert cells[5] == f"{v['rating_a']} / {v['rating_b']}" and cells[7] == "X tiene más pegada"
+    assert "veredictos: 1" in page.inner_text("[data-testid=listening-summary]")

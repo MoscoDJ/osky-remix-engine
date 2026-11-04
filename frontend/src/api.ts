@@ -23,6 +23,16 @@ export interface State {
   audio_clip_ticks: Record<string, number>;
 }
 export interface Revision { id: string; author: string; message: string; kind: string; created_at: string; ops: unknown[] }
+export interface Verdict {
+  id: number; session: string; created: string; rev_a: string; rev_b: string; label_a: string; label_b: string;
+  profile: string; render_key_a: string | null; render_key_b: string | null; score_a: number | null; score_b: number | null;
+  seed: number; x_was: "a" | "b"; preferred: "a" | "b" | "none"; preferred_rev: string | null;
+  rating_a: number; rating_b: number; note: string;
+}
+export interface ListeningSummary {
+  verdicts: number; no_preference: number; pairs: number; score_ties: number; agree: number;
+  agreement_pct: number | null; mean_rating_preferred: number | null; mean_rating_other: number | null;
+}
 export interface Job { id: string; status: string; result: any; error: string | null }
 
 async function j<T>(r: Response): Promise<T> {
@@ -54,6 +64,10 @@ export const api = {
     fetch(`/api/projects/${p}/jobs`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(body) }).then(j<{ job: string }>),
   cancelJob: (id: string) => fetch(`/api/jobs/${id}/cancel`, { method: "POST" }).then(j),
+  listening: (p: string) => fetch(`/api/projects/${p}/listening`).then(j<{ verdicts: Verdict[]; summary: ListeningSummary }>),
+  verdict: (p: string, body: { session: string; preferred: string; rating_x: number; rating_y: number; note: string }) =>
+    fetch(`/api/projects/${p}/listening`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body) }).then(j<Verdict>),
   getJob: (id: string) => fetch(`/api/jobs/${id}`).then(j<Job>),
 };
 

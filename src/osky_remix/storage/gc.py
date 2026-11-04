@@ -66,7 +66,7 @@ def collect(older_than_days: float = 30, include_cache: bool = False, dry_run: b
             elif entry.is_dir() and _age(entry, now) > limit:
                 drop(entry)
 
-    for kind in ("renders", "compare"):
+    for kind in ("renders", "compare", "listening"):
         base = root / kind
         if base.is_dir():
             for project in sorted(p for p in base.iterdir() if p.is_dir()):
