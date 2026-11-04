@@ -91,6 +91,42 @@ uv run osky-remix gc --older-than 30            # informa qué borraría
 uv run osky-remix gc --older-than 30 --apply    # borra; --cache incluye la caché de proyectos
 ```
 
+## Biblioteca de samples
+
+One-shots y loops del workspace (`workspace/samples/`): archivos por SHA-256, rasgos en caché
+(clave: sha + versión del extractor) e índice SQLite para buscar.
+
+```bash
+uv run osky-remix samples import ~/samples/kit-techno          # WAV/FLAC/AIFF, recursivo; re-importar es idempotente
+uv run osky-remix samples search --cat kick --bright 0.0-0.3 --max-decay 0.4
+uv run osky-remix samples search --note A --one-shot            # nota (C = cualquier octava, A4 exacta)
+uv run osky-remix samples search --like <sha> --limit 5         # vecinos más cercanos (rasgos normalizados)
+uv run osky-remix samples use mi-remix <sha> --track kick       # al kit de la pista (drums o sampler)
+uv run osky-remix samples use mi-remix <sha> --track perc --create --pitch 60
+```
+
+Rasgos: duración, pico/RMS, ataque 10–90 %, cola a −40 dB, centroide y rolloff (brillo 0–1),
+energía bajo 150 Hz, f0 y nota de los one-shots tonales, loop y BPM, y una categoría aproximada
+(kick, snare, clap, hat, perc, bass, tonal, fx, loop) con confianza. `samples use` registra el
+sample y un kit (`preset` JSON nota → sample) en el proyecto con operaciones validadas; el
+instrumento `drums` toca con samples las notas mapeadas y el `sampler` solo esas, a la muestra
+exacta de cada nota con ganancia `velocidad/127`.
+
+## Lotes
+
+```bash
+uv run osky-remix batch canciones/ --template melodic_techno --variants A,B,C --profile club
+uv run osky-remix batch canciones/ --template melodic_techno --variants A,B,C --profile club --resume
+```
+
+Por canción: proyecto, ingesta, separación (demucs), análisis, segmento vocal, arreglo,
+variantes, render y evaluación, con las mismas funciones que la CLI. El estado de cada paso queda
+en `workspace/batches/<id>/manifest.json`: tras un fallo o Ctrl+C, `--resume` sigue desde el último
+paso completado y una canción que falla no detiene a las demás. Al final: tabla, `report.md`/
+`report.json` (comparación entre canciones) y `songs/<canción>.md|json` (tempo, tonalidad,
+segmento vocal, puntaje, LUFS y avisos por variante). `--jobs N` procesa N canciones en procesos
+separados; la separación va de a una.
+
 ## Agente
 
 ```bash

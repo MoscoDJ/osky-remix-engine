@@ -4,12 +4,14 @@ from .agent import evaluate_cmd, improve_cmd, vary_cmd
 from .analyze import analyze, ingest, reference, separate
 from .dawproject import dawproject_cmd
 from .dj import cues_cmd, extend_cmd
+from .batch import batch
 from .doctor import doctor
 from .match import match_cmd
 from .listening import listening_cmd
 from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
 from .vocals import transpose
+from .samples import samples_app
 
 app = typer.Typer(help="Osky Remix Engine: producción de remixes headless operada por Claude.",
                   no_args_is_help=True, add_completion=False)
@@ -33,10 +35,12 @@ app.command("match")(match_cmd)
 app.command("extend")(extend_cmd)
 app.command("cues")(cues_cmd)
 app.command("listening")(listening_cmd)
+app.command("batch")(batch)
 app.add_typer(project_app, name="project")
 app.add_typer(op_app, name="op")
 app.add_typer(asset_app, name="asset")
 app.add_typer(schema_app, name="schema")
+app.add_typer(samples_app, name="samples")
 
 
 @app.command("serve")
