@@ -39,6 +39,20 @@ def serve(host: str = typer.Option("127.0.0.1", help="solo local por defecto"), 
     uvicorn.run(create_app(), host=host, port=port, log_level="warning")
 
 
+@app.command("gc")
+def gc(older_than: float = typer.Option(30, "--older-than", help="días sin uso"),
+       include_cache: bool = typer.Option(False, "--cache", help="incluir la caché de cada proyecto"),
+       apply: bool = typer.Option(False, "--apply", help="borrar de verdad (por defecto solo informa)")):
+    """Borra renders, comparaciones y temporales sin uso. Todo es regenerable; no toca proyectos."""
+    from ..storage.gc import collect
+    rep = collect(older_than, include_cache, dry_run=not apply)
+    for r in rep.removed:
+        typer.echo(("borrado  " if apply else "borraría ") + r)
+    verb = "liberados" if apply else "se liberarían"
+    typer.echo(f"{len(rep.removed)} entradas, {rep.freed_bytes / 2**20:.1f} MiB {verb}"
+               + ("" if apply else " (usa --apply para borrar)"))
+
+
 @app.callback()
 def _root() -> None:
     """Osky Remix Engine."""

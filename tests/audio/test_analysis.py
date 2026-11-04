@@ -125,3 +125,26 @@ def test_silences_transients_features(pop):
     assert near(tr, gt.kicks, 0.01) >= 0.9 * len(gt.kicks)
     f = analyze_features(np.stack([sine(1000, 20, amp=10 ** (-23 / 20))] * 2, 1), SR)
     assert abs(f.lufs + 23) < 0.15 and f.clipped_samples == 0 and abs(f.stereo_correlation - 1) < 1e-6
+
+
+@pytest.mark.parametrize('source_sr,frames', [(48000,44100), (44100,22050)])
+def test_analysis_rejects_misaligned_stems_before_processing(tmp_path, source_sr, frames):
+    import soundfile as sf
+    from osky_remix.analysis.pipeline import run_analysis
+    mix, stem = tmp_path/'mix.wav', tmp_path/'stem.wav'
+    sf.write(mix, np.zeros((44100,2)), 44100)
+    sf.write(stem, np.zeros((frames,2)), source_sr)
+    with pytest.raises(ValueError, match='alinear|remuestrear'):
+        run_analysis(mix, {'vocals':stem})
+
+
+def test_analysis_accepts_stems_a_few_samples_off(tmp_path, pop):
+    import soundfile as sf
+    from osky_remix.analysis.pipeline import run_analysis
+    a = pop[0]
+    x = a if a.ndim == 2 else np.stack([a, a], 1)
+    mix, stem = tmp_path/'mix.wav', tmp_path/'stem.wav'
+    sf.write(mix, x, SR)
+    sf.write(stem, x[:-300], SR)                       # ~7 ms más corto, como algunos separadores
+    rep = run_analysis(mix, {'vocals': stem})
+    assert rep.sources["vocal_activity"] == "stem vocals"

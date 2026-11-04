@@ -85,7 +85,11 @@ def separate(name: str, sha: str, backend: str = typer.Option("demucs", "--backe
     if not ok:
         _fail(why)
     model = model or sep.default_model
-    key = cache_key("separate", "1", [sha], {"backend": backend, "model": model, "lead_backing": lead_backing})
+    from ..core.environment import separator_environment
+    def separation_key():
+        return cache_key("separate", "2", [sha], {"backend": backend, "model": model,
+                         "lead_backing": lead_backing, "environment": separator_environment(backend)})
+    key = separation_key()
     cached = repo.cache.get_json(key)
     if cached:
         _out(as_json, cached, f"(caché) reporte {cached['report'][:12]}; stems: "
@@ -130,7 +134,8 @@ def separate(name: str, sha: str, backend: str = typer.Option("demucs", "--backe
                 assets.append(a)
                 stem_sha[stem] = a.sha256
         report = {"input": sha, "backend": backend, "model": model, "stems": stem_sha,
-                  "quality": {k: v.model_dump() for k, v in qualities.items()}}
+                  "quality": {k: v.model_dump() for k, v in qualities.items()},
+                  "environment": separator_environment(backend)}
         rp = td / "separation_report.json"
         rp.write_text(json.dumps(report, indent=2, ensure_ascii=False))
         ra = repo.assets.ingest(rp, AssetKind.analysis, Provenance(tool="osky-separation-qc", tool_version="1",
@@ -139,7 +144,7 @@ def separate(name: str, sha: str, backend: str = typer.Option("demucs", "--backe
         assets.append(ra)
     rev = _register(repo, assets, _author(author), f"Separación {backend}/{model}")
     summary = {"report": ra.sha256, "stems": stem_sha, "revision": rev.id if rev else None}
-    repo.cache.put_json(key, summary)
+    repo.cache.put_json(separation_key(), summary)
     if as_json:
         print(json.dumps({**summary, "quality": report["quality"]}, ensure_ascii=False))
         return

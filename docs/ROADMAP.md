@@ -25,3 +25,13 @@ Cada etapa entrega una demostración funcional, pruebas automatizadas y document
 - `mastering`: LUFS (BS.1770), true peak 4×, limitador con lookahead, perfiles `club`,
   `streaming`, `dynamic`.
 - `analysis.transcribe`: Basic Pitch ONNX + filtro de armónicos.
+
+
+## Correcciones posteriores a las etapas 0–6 (2026-11-04)
+
+Implementadas las siete etapas de fiabilidad: reversión por rama/revisión esperada; solo y
+bypass; coordenadas fuente y remuestreo; mastering con estados; caché compartida verificable;
+revisiones fijas y conservación manual; aislamiento, cancelación, concurrencia, versiones y CI.
+Resultados y límites en `docs/COMPATIBILITY.md`. Benchmark de memoria en `docs/AUDIO_ENGINE.md`.
+La CI remota está preparada y requiere ejecución/configuración en GitHub. La aprobación
+artística por escucha no forma parte de los resultados automáticos.

@@ -184,7 +184,7 @@ class ProjectRepo:
         s.flush()
         b.head = row.id
 
-    def commit(self, ops: list[Op] | list[dict], author: Author, message: str, branch: str | None = None) -> Revision:
+    def commit(self, ops: list[Op] | list[dict], author: Author, message: str, branch: str | None = None, expected_head: str | None = None) -> Revision:
         """Aplica un lote de operaciones de forma atómica y crea una revisión."""
         if ops and isinstance(ops[0], dict):
             ops = parse_ops(ops)
@@ -195,6 +195,8 @@ class ProjectRepo:
             head = s.get(BranchRow, br)
             if head is None:
                 raise RepoError(f"no existe la rama '{br}'")
+            if expected_head is not None and head.head != expected_head:
+                raise RepoError("la rama cambió; recarga antes de confirmar")
             before = Project.model_validate_json(s.scalar(select(RevisionRow.snapshot).where(RevisionRow.id == head.head)))
             after = apply_ops(before, ops, Context(author=author, asset_exists=self.assets.exists))
             row = self._new_row(head.head, None, br, author, message, "ops", _ops_json(ops), after)
@@ -215,14 +217,20 @@ class ProjectRepo:
                 raise RepoError(f"no existe la rama '{branch}'")
             s.get(MetaRow, "current_branch").value = branch
 
-    def revert(self, to_rev: str, author: Author, message: str | None = None) -> Revision:
+    def revert(self, to_rev: str, author: Author, message: str | None = None,
+               branch: str | None = None, expected_head: str | None = None) -> Revision:
         """Nueva revisión cuyo contenido es el de ``to_rev``. El historial no se reescribe.
 
         Si la reversión alteraría pistas bloqueadas, solo el usuario puede hacerla.
         """
         with Session(self.engine) as s, s.begin():
-            br = self._meta(s, "current_branch")
-            head_id = s.get(BranchRow, br).head
+            br = branch or self._meta(s, "current_branch")
+            head = s.get(BranchRow, br)
+            if head is None:
+                raise RepoError(f"no existe la rama {br}")
+            head_id = head.head
+            if expected_head is not None and head_id != expected_head:
+                raise RepoError("la rama cambió; recarga antes de revertir")
             target = self._row(s, to_rev)
             cur = Project.model_validate_json(s.scalar(select(RevisionRow.snapshot).where(RevisionRow.id == head_id)))
             old = Project.model_validate_json(target.snapshot)

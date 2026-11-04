@@ -73,3 +73,37 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
     diera). v2: lookahead de 5 ms + release exponencial por bloques, misma garantía de techo.
 15. **Compatibilidad mono**: medirla contra un canal (L+R)/2 da siempre -3 dB; se compara contra la
     mezcla mono duplicada en ambos canales.
+
+
+## Verificación de correcciones, 2026-11-04
+
+No se relajaron tolerancias existentes. Se añadieron comprobaciones de señal para solo,
+bypass, recortes entre frecuencias, impulsos y cambios de tempo; mastering de silencio y
+objetivos imposibles; integridad e identidad de renders; concurrencia, cancelación, caída y
+reinicio de cola; revisión esperada y conservación de contenido manual desbloqueado.
+
+Doctor local: 14/14 PASS, con señales y mediciones conocidas. Instalación Python independiente
+reconstruida con `uv sync --frozen --offline`: Surge, Rubber Band y mastering PASS. Esto verifica
+el entorno de aplicación; no equivale a reinstalar Kubuntu ni los controladores de GPU.
+Entornos externos: versiones de todos sus paquetes registradas en `requirements/*-linux.txt`,
+verificables con `uv run python scripts/verify_environment.py`. Los hashes fijados cubren los
+modelos que estaban disponibles localmente; modelos nuevos requieren registro y validación.
+
+Las pruebas de interfaz requieren Chromium de la versión de Playwright instalada. La ausencia
+del navegador es un error, no una aprobación. La compilación debe preceder a estas pruebas.
+CI rápida: GitHub Actions Ubuntu 24.04. Compatibilidad de audio: ejecución manual en runner
+`self-hosted, linux, osky-audio`; no se ha configurado ni ejecutado un runner remoto aquí.
+
+La verificación realizada es objetiva. La aprobación artística por escucha A/B permanece en
+manos del usuario; los tests no afirman ausencia de bombeo o artefactos perceptuales en toda música.
+
+
+Resultado final local: 127 pruebas no-compat aprobadas (incluidas 8 de interfaz), 13 pruebas
+compat aprobadas y una regresión adicional del manifiesto de modelos aprobada. Build frontend
+correcto. Se mantuvieron las advertencias de deprecación de dependencias de desarrollo.
+
+Los modelos predeterminados htdemucs_ft y karaoke RoFormer se descargaron, cargaron y fijaron
+por hash junto con sus recetas. Sobre una melodía sintética de 220500 muestras a 44100 Hz:
+cuatro stems Demucs con reconstrucción 42.24 dB y dos stems lead/backing con reconstrucción
+82.90 dB, tras compensar ganancia global; longitudes, frecuencia y finitud verificadas.
+Esto valida el transporte/procesamiento de la señal, no la calidad perceptual sobre voces reales.

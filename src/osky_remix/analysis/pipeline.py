@@ -37,6 +37,26 @@ def _load(p: Path) -> tuple[np.ndarray, int]:
     return x, sr
 
 
+STEM_LENGTH_TOLERANCE_S = 0.05   # relleno/recorte típico de separadores y remuestreos
+
+
+def _check_stem(name: str, p: Path, sr: int, n: int) -> None:
+    info = sf.info(str(p))
+    if info.samplerate != sr:
+        raise ValueError(f"stem {name}: {info.samplerate} Hz, la mezcla está a {sr} Hz; remuestrear antes de analizar")
+    if abs(info.frames - n) > STEM_LENGTH_TOLERANCE_S * sr:
+        raise ValueError(f"stem {name}: dura {info.frames / sr:.2f} s y la mezcla {n / sr:.2f} s; "
+                         "alinear antes de analizar")
+
+
+def _load_stem(p: Path, n: int) -> np.ndarray:
+    """Stem ya validado, ajustado a la longitud exacta de la mezcla."""
+    x, _ = _load(p)
+    if len(x) < n:
+        x = np.pad(x, ((0, n - len(x)), (0, 0)))
+    return x[:n]
+
+
 def vocal_activity(vox: np.ndarray, sr: int, thr_dbfs: float = -42.0, min_gap_s: float = 0.8,
                    min_len_s: float = 0.5) -> list[tuple[int, int]]:
     m = np.abs(vox).max(axis=1) if vox.ndim == 2 else np.abs(vox)
@@ -67,16 +87,17 @@ def run_analysis(mix_path: Path, stems: dict[str, Path] | None = None) -> Analys
     stems = stems or {}
     t = {}
     mix, sr = _load(mix_path)
+    # Validar y cargar todos antes de analizar: un stem desalineado falla rápido, no a mitad.
+    for name, path in stems.items():
+        _check_stem(name, path, sr, len(mix))
     t0 = time.time(); rhythm = analyze_rhythm(mix, sr); t["rhythm"] = time.time() - t0
     src = {"rhythm": "mezcla"}
     harm_sig = mix
     if "bass" in stems and "other" in stems:
-        b, _ = _load(stems["bass"]); o, _ = _load(stems["other"])
-        n = min(len(b), len(o), len(mix))
-        harm_sig = b[:n] + o[:n]
+        harm_sig = _load_stem(stems["bass"], len(mix)) + _load_stem(stems["other"], len(mix))
         src["harmony"] = "stems bass+other (sin voz ni batería)"
     elif "instrumental" in stems:
-        harm_sig, _ = _load(stems["instrumental"])
+        harm_sig = _load_stem(stems["instrumental"], len(mix))
         src["harmony"] = "stem instrumental"
     else:
         src["harmony"] = "mezcla"
@@ -91,8 +112,7 @@ def run_analysis(mix_path: Path, stems: dict[str, Path] | None = None) -> Analys
     va = None
     vkey = next((k for k in ("vocals", "lead_vocals") if k in stems), None)
     if vkey:
-        v, _ = _load(stems[vkey])
-        va = vocal_activity(v, sr)
+        va = vocal_activity(_load_stem(stems[vkey], len(mix)), sr)
         src["vocal_activity"] = f"stem {vkey}"
     return AnalysisReport(sample_rate=sr, duration_samples=len(mix), sources=src, rhythm=rhythm, harmony=harmony,
                           structure=structure, features=feats, silences=sil, transients=trans, vocal_activity=va,

@@ -89,7 +89,11 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(f"{out} no está vacío")
     (out / "audio").mkdir(parents=True, exist_ok=True)
-    rep = Renderer(p, assets, cache).render(out / "audio", profile, stems=True, name="mix")
+    renderer = Renderer(p, assets, cache)
+    renderer.validate_capabilities()
+    rep = renderer.render(out / "audio", profile, stems=True, name="mix")
+    if not rep.mastering_converged or rep.quality["status"] == "FAIL":
+        raise ValueError(f"entrega rechazada: mastering {rep.mastering_status}, calidad {rep.quality['status']}")
     a = out / "audio"
     (a / "mix_master.wav").rename(a / "master.wav")
     (a / "mix_premaster.wav").rename(a / "premaster.wav")

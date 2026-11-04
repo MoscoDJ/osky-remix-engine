@@ -92,3 +92,35 @@ uv run osky-remix package verify <carpeta>
 | Entrega | master 24 bits, premaster float, stems alineados, MIDI (PPQ 960, mapa de tempo), presets, `plugins.json`, calidad, proyecto + assets y `manifest.json` con SHA-256. |
 
 Esquemas: `schemas/render.schema.json` describe el reporte de render.
+
+
+## Semántica de audio y entregas (2026-11-04)
+
+`source_offset`, `source_length` y fades se expresan en muestras del asset. Se lee solo el
+fragmento fuente, se remuestrea y su longitud de destino se redondea hacia arriba, como
+`resample_poly`. API y render usan la misma conversión; el inicio se obtiene del mapa de tempo.
+
+Solo, como en un DAW:
+
+- **Pista o bus en solo:** suenan ella, lo que le llega por su salida (las fuentes de un bus) y
+  todo lo que hay río abajo (sus salidas y envíos, p. ej. su reverb).
+- **Retorno en solo:** las pistas que le envían señal se procesan para alimentarlo, pero su
+  salida directa calla; en el master solo está el retorno. Lo mismo si la señal llega por una
+  cadena (pista → bus → envío al retorno).
+- Una pista fuera del solo no alimenta un retorno que solo es audible por estar río abajo
+  (el envío del bombo al reverb de la voz en solo calla), ni una alimentadora llega por un
+  segundo envío a otra pista audible.
+
+Varias pistas solo se suman. Mute prevalece y silencia también los envíos pre-fader;
+el detector de sidechain conserva la señal dry (una pista fuera del solo sigue disparándolo). Bypass de instrumento MIDI deja de generar
+señal; bypass de un efecto permite pasar la señal sin ese efecto.
+
+El mastering distingue `converged`, `silent`, `unmeasurable` y `not_converged`. Los niveles
+no medibles se serializan como null. Un preview puede contener un resultado fallido con su
+reporte; `export` rechaza mastering no convergente, calidad FAIL y capacidades de plugin no
+implementadas. Un puntaje del agente es una medida técnica, no una aprobación musical.
+
+Benchmark reproducible: `uv run python scripts/benchmark_render.py --seconds 180 --tracks 8`.
+En este equipo: 12.70 s y 2596.3 MiB RSS máximo, -14.00 LUFS, -11.46 dBTP. Fixture sintético
+con ocho pistas de audio, sin instrumentos externos: no predice el coste de plugins pesados.
+Se mantiene el procesamiento en memoria; dimensionar RAM antes de sesiones mayores.

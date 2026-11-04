@@ -60,6 +60,9 @@ def vary_cmd(name: str, base: str = typer.Option(..., "--from", help="revisión 
              variants: str = typer.Option("A,B,C", "--variants"),
              prefix: str = typer.Option("var", "--prefix", help="prefijo de las ramas creadas"),
              evaluate_: bool = typer.Option(True, "--evaluate/--no-evaluate"),
+             adopt_legacy: bool = typer.Option(False, "--adopt-legacy",
+                                               help="proyecto anterior al registro de procedencia: tratar su "
+                                                    "contenido como generado y regenerarlo"),
              as_json: bool = typer.Option(False, "--json")):
     """Hito 2: varios arreglos del mismo material en ramas, sin tocar pistas bloqueadas."""
     from ..agents.planner import assess
@@ -84,7 +87,7 @@ def vary_cmd(name: str, base: str = typer.Option(..., "--from", help="revisión 
         br = f"{prefix}-{v.lower()}"
         if br in repo.branches():
             _fail(f"ya existe la rama '{br}'")
-        plan = rearrange(p, tpl, ctx, cm["bars"], v, prefix=f"{v.lower()}-")
+        plan = rearrange(p, tpl, ctx, cm["bars"], v, prefix=f"{v.lower()}-", adopt_legacy=adopt_legacy)
         try:
             repo.create_branch(br, base_id)
             rev = repo.commit(plan.ops, "claude", f"Variante {v}: {VARIANTS[v]['label']}", br)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prepara un equipo Ubuntu/Kubuntu para Osky Remix Engine. Idempotente.
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
 SURGE_VER=1.3.4
 SURGE_SHA256=a6e55064487f624147d515b9ae5fc79a568b69746675b2083abde628ca7bb151
@@ -23,17 +24,20 @@ command -v uv >/dev/null || { echo "Instala uv: https://docs.astral.sh/uv/"; exi
 
 echo "== Entorno Python (3.11, versiones fijadas en uv.lock)"
 uv python install 3.11
-uv sync
+uv sync --frozen
 
 if ! command -v demucs >/dev/null; then
   echo "== Demucs (herramienta independiente)"
-  uv tool install --python 3.12 demucs --with numpy --with soundfile --with torchcodec
+  uv tool install --python 3.12 demucs==4.1.0 --with-requirements requirements/demucs-linux.txt
 fi
 
 if ! command -v audio-separator >/dev/null; then
   echo "== audio-separator (RoFormer, opcional: voz y lead/backing)"
-  uv tool install --python 3.12 "audio-separator[gpu]" --with audioread || echo "   (omitido: falló la instalación)"
+  uv tool install --python 3.12 "audio-separator[gpu]==0.48.0" --with-requirements requirements/audio-separator-linux.txt || echo "   (omitido: falló la instalación)"
 fi
+
+echo "== Verificando versiones y modelos instalados"
+uv run python scripts/verify_environment.py
 
 echo "== Interfaz web (React + Vite)"
 (cd frontend && npm ci --no-audit --no-fund && npm run build)

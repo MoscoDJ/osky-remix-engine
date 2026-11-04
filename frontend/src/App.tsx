@@ -21,6 +21,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [profile, setProfile] = useState("");
   const [render, setRender] = useState<any>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [evalRes, setEvalRes] = useState<any>(null);
@@ -49,7 +50,7 @@ export default function App() {
 
   const commit = async (ops: object[], message: string) => {
     try {
-      await api.ops(project, ops, message, branch);
+      await api.ops(project, ops, message, branch, state?.revision);
       setToast({ kind: "ok", text: message });
       await reload();
     } catch (e: any) {
@@ -58,6 +59,7 @@ export default function App() {
     }
   };
 
+  const visibleRender = render?.revision === state?.revision && render?.requestedProfile === profile ? render : null;
   const prj = state?.project ?? null;
   const tracks = useMemo(() => prj?.tracks ?? [], [prj]);
   const selClip = useMemo(() => tracks.flatMap((t) => t.clips.map((c) => ({ t, c }))).find((x) => x.c.id === selected), [tracks, selected]);
@@ -71,16 +73,18 @@ export default function App() {
     commit([{ op: "set_midi_notes", clip: selClip.c.id, notes }], `Editar notas de ${selClip.c.id} (${notes.length})`);
 
   const doRender = async () => {
+    if (!state) return;
     setBusy("Renderizando…");
-    try { setRender(await runJob(project, { kind: "render", rev: branch, profile: profile || undefined })); }
+    try { const result = await runJob(project, { kind: "render", rev: state.revision, profile: profile || undefined }, setJobId); setRender({ ...result, requestedProfile: profile }); }
     catch (e: any) { setToast({ kind: "err", text: e.message }); }
-    finally { setBusy(null); }
+    finally { setBusy(null); setJobId(null); }
   };
   const doEval = async () => {
+    if (!state) return;
     setBusy("Evaluando…"); setTab("eval");
-    try { setEvalRes(await runJob(project, { kind: "evaluate", rev: branch })); }
+    try { setEvalRes(await runJob(project, { kind: "evaluate", rev: state.revision, profile: profile || undefined }, setJobId)); }
     catch (e: any) { setToast({ kind: "err", text: e.message }); }
-    finally { setBusy(null); }
+    finally { setBusy(null); setJobId(null); }
   };
   const newBranch = async () => {
     const name = window.prompt("Nombre de la rama nueva", `${branch}-idea`);
@@ -106,14 +110,15 @@ export default function App() {
           <option value="">perfil del proyecto ({prj?.master_profile})</option>
           {profiles.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <button className="primary" onClick={doRender} disabled={!!busy}>Renderizar</button>
-        <button onClick={doEval} disabled={!!busy}>Evaluar</button>
+        <button className="primary" onClick={doRender} disabled={!!busy || !state}>Renderizar</button>
+        <button onClick={doEval} disabled={!!busy || !state}>Evaluar</button>
+        {busy && jobId && <button onClick={() => api.cancelJob(jobId).catch((e) => setToast({kind:"err", text:e.message}))}>Cancelar</button>}
         {busy && <span className="busy">{busy}</span>}
       </header>
       <main>
         <section className="left">
-          <Player url={render?.master_url ?? null} prj={prj}
-                  info={render ? `${render.lufs} LUFS · ${render.true_peak_dbtp} dBTP · calidad ${render.quality.status}` : undefined} />
+          <Player url={visibleRender?.master_url ?? null} prj={prj}
+                  info={visibleRender ? `${visibleRender.lufs ?? "—"} LUFS · ${visibleRender.true_peak_dbtp ?? "—"} dBTP · calidad ${visibleRender.quality.status} · mastering ${visibleRender.mastering_status}` : undefined} />
           {state && <Timeline project={project} state={state} selected={selected} onSelect={(id) => { setSelected(id); if (id) setTab("midi"); }}
                               onMove={onMove} onToggleLock={onLock} />}
           <nav className="tabs">
@@ -138,8 +143,8 @@ export default function App() {
           </div>
         </section>
         <aside>
-          <h3>Historial · {branch}</h3>
-          <History log={log} onRevert={(r) => api.revert(project, r.id).then(reload).catch((e) => setToast({ kind: "err", text: e.message }))} />
+          <h3>Historial · {branch} · volver aquí revierte esta rama</h3>
+          <History log={log} onRevert={(r) => state && api.revert(project, r.id, branch, state.revision).then(reload).catch((e) => setToast({ kind: "err", text: e.message }))} />
         </aside>
       </main>
       {toast && <div className={`toast ${toast.kind}`} role="status">{toast.text}</div>}

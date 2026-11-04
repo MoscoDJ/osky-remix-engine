@@ -16,7 +16,10 @@ def _as_frames(audio: np.ndarray) -> np.ndarray:
 
 
 def integrated_lufs(audio: np.ndarray, sr: int) -> float:
-    return float(pyln.Meter(sr).integrated_loudness(_as_frames(audio)))
+    x = _as_frames(audio)
+    if len(x) < int(np.ceil(.4 * sr)):
+        x = np.pad(x, ((0, int(np.ceil(.4 * sr)) - len(x)), (0, 0)))
+    return float(pyln.Meter(sr).integrated_loudness(x))
 
 
 def gain_to_target(audio: np.ndarray, sr: int, target_lufs: float) -> float:

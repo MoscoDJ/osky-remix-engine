@@ -96,3 +96,72 @@ def test_variants_keep_locked_tracks_and_change_the_rest():
     notes = lambda q, t: sorted((c.start_tick + n.tick, n.pitch) for c in q.track(t).clips for n in c.notes)
     assert notes(outs["A"], "arp") != notes(outs["B"], "arp") != notes(outs["C"], "arp")
     assert notes(outs["A"], "drums") != notes(outs["C"], "drums")
+
+
+
+def test_regeneration_keeps_unlocked_manual_content():
+    from tests.unit.test_composition import _ctx
+    tpl = load_template("melodic_techno")
+    p = apply_ops(Project(name="manual", sample_rate=44100), parse_ops(arrange(tpl, _ctx(), 32, {}).ops), U)
+    clip = p.track("arp").clips[0]
+    p = apply_ops(p, parse_ops([
+        {"op":"move_clip", "clip":clip.id, "start_tick":clip.start_tick+120},
+        {"op":"add_marker", "marker":{"id":"my-marker", "tick":100, "label":"manual"}},
+        {"op":"set_automation", "lane":{"id":"my-auto", "track":"pad", "target":"gain_db",
+        "points":[{"tick":0, "value":-3}]}}]), U)
+    plan = rearrange(p, tpl, _ctx(), 32, "B", "b-")
+    q = apply_ops(p, parse_ops(plan.ops), Context(author="claude"))
+    assert q.track("arp") == p.track("arp")
+    assert q.track("pad") == p.track("pad")
+    assert next(m for m in q.markers if m.id == "my-marker").label == "manual"
+    assert next(a for a in q.automation if a.id == "my-auto").points[0].value == -3
+
+
+def test_agent_does_not_commit_after_manual_edit(agent_repo, monkeypatch):
+    import osky_remix.agents.planner as planner
+    original = planner.assess
+    calls = 0
+    def assess_then_edit(*args, **kwargs):
+        nonlocal calls
+        value = original(*args, **kwargs)
+        calls += 1
+        if calls == 2:
+            agent_repo.commit([{'op':'set_track','track':'kick','gain_db':-1}], 'user', 'manual')
+        return value
+    monkeypatch.setattr(planner, 'assess', assess_then_edit)
+    result = planner.improve(agent_repo, 'main', log=lambda *_:None)
+    assert result.needs_user and not any(s.accepted for s in result.steps)
+    assert agent_repo.load().track('kick').gain_db == -1
+    assert len(agent_repo.log()) == 2
+
+
+
+def test_regeneration_does_not_resurrect_manually_deleted_clips():
+    from tests.unit.test_composition import _ctx
+    tpl = load_template('melodic_techno')
+    p = apply_ops(Project(name='deleted',sample_rate=44100),parse_ops(arrange(tpl,_ctx(),32,{}).ops),U)
+    cid = p.track('arp').clips[0].id
+    p = apply_ops(p,parse_ops([{'op':'delete_clip','clip':cid}]),U)
+    q = apply_ops(p,parse_ops(rearrange(p,tpl,_ctx(),32,'B','b-').ops),Context(author='claude'))
+    assert q.track('arp') == p.track('arp')
+
+
+
+def test_legacy_project_is_preserved_unless_adopted():
+    from tests.unit.test_composition import _ctx
+    tpl = load_template('melodic_techno')
+    p = apply_ops(Project(name='legacy', sample_rate=44100), parse_ops(arrange(tpl, _ctx(), 32, {}).ops), U)
+    del p.meta['generated_content']                      # proyecto creado antes del registro
+    plan = rearrange(p, tpl, _ctx(), 32, 'B', 'b-')
+    q = apply_ops(p, parse_ops(plan.ops), Context(author='claude'))
+    assert [t.model_dump() for t in q.tracks] == [t.model_dump() for t in p.tracks]
+    assert any('--adopt-legacy' in s for s in plan.skipped)
+    adopted = rearrange(p, tpl, _ctx(), 32, 'B', 'b-', adopt_legacy=True)
+    r = apply_ops(p, parse_ops(adopted.ops), Context(author='claude'))
+    assert adopted.tracks and r.track('arp') != p.track('arp')
+    assert 'generated_content' in r.meta and not any('--adopt-legacy' in s for s in adopted.skipped)
+    # tras adoptar, el registro protege las ediciones manuales como en un proyecto nuevo
+    clip = r.track('arp').clips[0]
+    r = apply_ops(r, parse_ops([{'op': 'move_clip', 'clip': clip.id, 'start_tick': clip.start_tick + 120}]), U)
+    again = apply_ops(r, parse_ops(rearrange(r, tpl, _ctx(), 32, 'C', 'c-').ops), Context(author='claude'))
+    assert again.track('arp') == r.track('arp')

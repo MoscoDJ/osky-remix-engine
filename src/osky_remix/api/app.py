@@ -33,6 +33,13 @@ class OpsIn(BaseModel):
     ops: list[dict]
     message: str
     branch: str | None = None
+    expected_head: str | None = None
+
+
+class RevertIn(BaseModel):
+    ref: str
+    branch: str
+    expected_head: str
 
 
 class BranchIn(BaseModel):
@@ -85,17 +92,13 @@ def _rel_url(path: Path) -> str:
 
 # ------------------------------------------------------------------ trabajos
 def job_render(project: str, params: dict) -> dict:
-    from ..audio.renderer import RENDER_VERSION, Renderer
+    from ..audio.render_service import render_cached
+    from ..mastering.dynamics import MasterProfile
     repo = _repo(project)
-    rid = repo.resolve(params.get("rev") or repo.head())
-    p = repo.load(rid)
-    prof = params.get("profile") or p.master_profile
-    out = workspace() / "renders" / project / f"{rid[:12]}-{Path(prof).stem}-{RENDER_VERSION}"
-    rep_f = out / "mix_report.json"
-    if not rep_f.exists():
-        Renderer(p, repo.assets, repo.cache).render(out, prof, stems=False)
-    rep = json.loads(rep_f.read_text())
-    return {"revision": rid, "profile": prof, "master_url": _rel_url(out / "mix_master.wav"),
+    prof = MasterProfile(**params["resolved_profile"]) if "resolved_profile" in params else params.get("profile")
+    rid, rep, out = render_cached(repo, project, params.get("rev") or repo.head(), prof)
+    return {"revision": rid, "profile": rep["profile"], "mastering_status": rep["mastering_status"],
+            "mastering_converged": rep["mastering_converged"], "master_url": _rel_url(out / "mix_master.wav"),
             "lufs": rep["lufs"], "true_peak_dbtp": rep["true_peak_dbtp"], "quality": rep["quality"],
             "warnings": rep["warnings"]}
 
@@ -104,8 +107,9 @@ def job_compare(project: str, params: dict) -> dict:
     from ..core.diff import diff_projects
     from ..mastering.compare import compare
     repo = _repo(project)
-    prof = params.get("profile") or "club"
-    ra, rb = job_render(project, {"rev": params["a"], "profile": prof}), job_render(project, {"rev": params["b"], "profile": prof})
+    ra, rb = job_render(project, {**params, "rev": params["a"]}), job_render(project, {**params, "rev": params["b"]})
+    if ra["lufs"] is None or rb["lufs"] is None:
+        raise ValueError("A/B requiere señales con sonoridad medible")
     root = workspace().resolve()
     xa, sr = sf.read(str(root / ra["master_url"][len("/files/"):]), dtype="float32", always_2d=True)
     xb, _ = sf.read(str(root / rb["master_url"][len("/files/"):]), dtype="float32", always_2d=True)
@@ -115,7 +119,7 @@ def job_compare(project: str, params: dict) -> dict:
     secs = [(m.label, tm.tick_to_sample(m.tick), tm.tick_to_sample(ms[i + 1].tick) if i + 1 < len(ms) else len(xa))
             for i, m in enumerate(ms)]
     rep, bm = compare(xa, xb, sr, secs)
-    out = workspace() / "compare" / project / f"{ra['revision'][:8]}_vs_{rb['revision'][:8]}_{prof}"
+    out = workspace() / "compare" / project / cache_key("compare", "2", [ra["revision"]], {"b": rb["revision"], "profile": ra["profile"]})
     out.mkdir(parents=True, exist_ok=True)
     sf.write(out / "B_igualado.wav", bm, sr, subtype="FLOAT")
     return {"a": ra, "b": rb, "a_url": ra["master_url"], "b_url": _rel_url(out / "B_igualado.wav"),
@@ -126,7 +130,9 @@ def job_evaluate(project: str, params: dict) -> dict:
     from ..agents.planner import assess
     repo = _repo(project)
     rid = repo.resolve(params.get("rev") or repo.head())
-    ev = assess(repo.load(rid), repo, profile=params.get("profile"))
+    from ..mastering.dynamics import MasterProfile
+    prof = MasterProfile(**params["resolved_profile"]) if "resolved_profile" in params else params.get("profile")
+    ev = assess(repo.load(rid), repo, profile=prof)
     return {"revision": rid, "score": ev.score, "metrics": ev.metrics,
             "findings": [{"code": f.code, "severity": f.severity, "detail": f.detail} for f in ev.findings]}
 
@@ -170,7 +176,7 @@ def create_app() -> FastAPI:
         for t in p.tracks:
             for c in t.clips:
                 if isinstance(c, AudioClip):
-                    end = max(end, tm.sample_to_tick(tm.tick_to_sample(c.start_tick) + c.source_length))
+                    end = max(end, tm.sample_to_tick(tm.tick_to_sample(c.start_tick) + p.audio_length(c)))
                 else:
                     end = max(end, c.start_tick + c.length_ticks)
         audio = {sha: {"name": a.name, "frames": a.frames, "sample_rate": a.sample_rate}
@@ -179,7 +185,7 @@ def create_app() -> FastAPI:
         for t in p.tracks:
             for c in t.clips:
                 if isinstance(c, AudioClip):
-                    clip_ticks[c.id] = tm.sample_to_tick(tm.tick_to_sample(c.start_tick) + c.source_length) - c.start_tick
+                    clip_ticks[c.id] = tm.sample_to_tick(tm.tick_to_sample(c.start_tick) + p.audio_length(c)) - c.start_tick
         return {"revision": rid, "project": json.loads(p.canonical_json()), "total_ticks": end,
                 "bar_ticks": p.ppq * 4 * p.meter[0].numerator // p.meter[0].denominator, "audio_assets": audio,
                 "audio_clip_ticks": clip_ticks}
@@ -196,7 +202,7 @@ def create_app() -> FastAPI:
     def apply_ops_ep(name: str, body: OpsIn):
         repo = _repo(name)
         try:
-            r = repo.commit(body.ops, "user", body.message, body.branch)
+            r = repo.commit(body.ops, "user", body.message, body.branch, expected_head=body.expected_head)
         except TransactionError as e:
             return JSONResponse({"ok": False, "index": e.index, "reason": e.reason}, status_code=409)
         except RepoError as e:
@@ -224,10 +230,10 @@ def create_app() -> FastAPI:
         return {"current": body.ref}
 
     @app.post("/api/projects/{name}/revert")
-    def revert(name: str, body: RefIn):
+    def revert(name: str, body: RevertIn):
         repo = _repo(name)
         try:
-            r = repo.revert(body.ref, "user")
+            r = repo.revert(body.ref, "user", branch=body.branch, expected_head=body.expected_head)
         except RepoError as e:
             raise HTTPException(400, str(e)) from None
         hub.publish({"type": "revision", "project": name, "branch": r.branch, "revision": r.id, "message": r.message})
@@ -268,14 +274,30 @@ def create_app() -> FastAPI:
 
     @app.post("/api/projects/{name}/jobs")
     def submit(name: str, body: JobIn):
-        _repo(name)
+        repo = _repo(name)
         if body.kind == "compare" and not (body.a and body.b):
             raise HTTPException(400, "compare necesita 'a' y 'b'")
         try:
-            jid = queue.submit(name, body.kind, body.model_dump(exclude_none=True))
-        except ValueError as e:
+            from dataclasses import asdict
+            from ..mastering.dynamics import load_profile
+            params = body.model_dump(exclude_none=True)
+            if body.kind == "compare":
+                params["a"], params["b"] = repo.resolve(body.a), repo.resolve(body.b)
+                prof = body.profile or "club"
+            else:
+                params["rev"] = repo.resolve(body.rev or repo.head())
+                prof = body.profile or repo.load(params["rev"]).master_profile
+            params["resolved_profile"] = asdict(load_profile(prof))
+            jid = queue.submit(name, body.kind, params)
+        except (ValueError, RepoError) as e:
             raise HTTPException(400, str(e)) from None
         return {"job": jid}
+
+    @app.post("/api/jobs/{jid}/cancel")
+    def cancel_job(jid: str):
+        if not queue.cancel(jid):
+            raise HTTPException(409, "trabajo ausente o ya terminado")
+        return {"status": "cancelled"}
 
     @app.get("/api/jobs/{jid}")
     def job(jid: str):

@@ -72,6 +72,14 @@ uv run osky-remix export mi-remix entrega/ --rev idea && uv run osky-remix packa
 
 Ver `docs/AUDIO_ENGINE.md`.
 
+Los renders se guardan por revisión, perfil y entorno, así que se acumulan. Para limpiar lo
+que lleva tiempo sin usarse (todo es regenerable; los proyectos no se tocan):
+
+```bash
+uv run osky-remix gc --older-than 30            # informa qué borraría
+uv run osky-remix gc --older-than 30 --apply    # borra; --cache incluye la caché de proyectos
+```
+
 ## Agente
 
 ```bash
@@ -79,6 +87,9 @@ uv run osky-remix evaluate mi-remix --rev idea
 uv run osky-remix improve mi-remix --branch idea
 uv run osky-remix vary mi-remix --from idea --variants A,B,C
 ```
+
+`vary` solo regenera contenido generado sin editar. Los proyectos creados antes del registro
+de procedencia (`generated_content`) se conservan enteros salvo con `--adopt-legacy`.
 
 Ver `docs/AGENT.md` y `docs/CODEX_WORKFLOW.md`.
 

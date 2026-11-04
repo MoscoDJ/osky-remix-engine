@@ -35,7 +35,7 @@ from .automation import curve, lanes_for
 from .effects import EFFECTS, apply_effect, pan_gain_curve
 from .graph import build_graph, describe
 
-RENDER_VERSION = "2.1.0"
+RENDER_VERSION = "3.1.0"
 INSTRUMENTS_BUILTIN = {"drums", "fx", "synth"}
 TAIL_S = 4.0
 
@@ -44,10 +44,13 @@ TAIL_S = 4.0
 class RenderReport:
     sample_rate: int
     length_samples: int
-    lufs: float = 0.0
-    true_peak_dbtp: float = 0.0
-    premaster_lufs: float = 0.0
+    lufs: float | None = None
+    true_peak_dbtp: float | None = None
+    premaster_lufs: float | None = None
     profile: dict = field(default_factory=dict)
+    mastering_status: str = "unknown"
+    mastering_converged: bool = False
+    mastering_unmet: list[str] = field(default_factory=list)
     mastering_log: list[str] = field(default_factory=list)
     graph: list[str] = field(default_factory=list)
     tracks: dict[str, dict] = field(default_factory=dict)
@@ -66,6 +69,7 @@ class Renderer:
         self.tm = project.tempo_map()
         self.bpm = project.tempo[0].bpm
         self.graph = build_graph(project)
+        self.audible, self.feeders, self.solo_core = self._solo_routes()
         self.n = self._length()
         self.report = RenderReport(self.sr, self.n, graph=describe(project))
         self.pre: dict[str, np.ndarray] = {}
@@ -73,20 +77,57 @@ class Renderer:
         self.dry: dict[str, np.ndarray] = {}
 
     # ---------------------------------------------------------------- utilidades
+    def _solo_routes(self) -> tuple[set[str], set[str], set[str]]:
+        """Pistas audibles y pistas que solo alimentan envíos bajo el solo actual.
+
+        - Audibles: las pistas en solo, todo lo que les llega por su *salida* (fuentes de un bus en
+          solo) y todo lo que hay río abajo de ellas (salidas y envíos).
+        - Alimentadoras: las que llegan a una pista en solo a través de algún *envío* (p. ej. la voz
+          con envío al retorno en solo). Se procesan para que el envío suene, pero su salida
+          directa no llega a ninguna pista audible: solo se escucha el retorno, como en un DAW.
+        """
+        ids = {t.id for t in self.p.tracks}
+        selected = {t.id for t in self.p.tracks if t.solo}
+        if not selected:
+            return ids, set(), ids
+        outputs = {t.id: t.output for t in self.p.tracks if t.output in ids}
+        sends = {t.id: {s.target for s in t.sends if s.target in ids} for t in self.p.tracks}
+
+        def closure(start: set[str], step) -> set[str]:
+            seen, frontier = set(start), set(start)
+            while frontier:
+                frontier = {n for x in frontier for n in step(x)} - seen
+                seen |= frontier
+            return seen
+
+        sources_of = lambda x: {tid for tid, out in outputs.items() if out == x}
+        senders_of = lambda x: {tid for tid, dest in sends.items() if x in dest}
+        downstream = lambda x: ({outputs[x]} if x in outputs else set()) | sends.get(x, set())
+        core = closure(selected, sources_of)
+        audible = closure(core, downstream)
+        # Solo cuentan los envíos hacia el núcleo del solo: el envío de una pista fuera del solo a un
+        # retorno que solo es audible por estar río abajo (p. ej. el bombo al reverb de la voz) calla.
+        first = {x for c in core for x in senders_of(c)} - audible
+        feeders = closure(first, lambda x: sources_of(x) | senders_of(x)) - audible
+        return audible, feeders, core
+
     def _length(self) -> int:
         end = 0
         for t in self.p.tracks:
             for c in t.clips:
                 s = self.tm.tick_to_sample(c.start_tick)
-                end = max(end, s + c.source_length if isinstance(c, AudioClip)
+                end = max(end, s + self.p.audio_length(c) if isinstance(c, AudioClip)
                           else self.tm.tick_to_sample(c.start_tick + c.length_ticks))
         return end + int(TAIL_S * self.sr)
 
-    def _asset_audio(self, sha: str) -> np.ndarray:
+    def _asset_audio(self, sha: str, offset: int = 0, length: int = -1) -> np.ndarray:
         path = self.assets.find(sha)
         if path is None:
             raise FileNotFoundError(f"asset {sha[:12]} no está en el almacén")
-        x, sr = sf.read(str(path), dtype="float32", always_2d=True)
+        with sf.SoundFile(str(path)) as source:
+            sr = source.samplerate
+            source.seek(offset)
+            x = source.read(length, dtype="float32", always_2d=True)
         if x.shape[1] == 1:
             x = np.repeat(x, 2, axis=1)
         if sr != self.sr:
@@ -129,11 +170,13 @@ class Renderer:
 
     def _calibrate(self, slot: PluginSlot) -> int:
         from ..doctor.fixtures import f0_median
-        key = cache_key("surge_calibrate", "1", [slot.preset or "default"], {})
+        from .render_service import environment_manifest
+        key = cache_key("surge_calibrate", "2", [slot.preset or "default"],
+                        {"sr": self.sr, "params": slot.params, "environment": environment_manifest()})
         c = self.cache.get_json(key)
         if c is not None:
             return int(c["semitones"])
-        y = self._surge_raw(slot, [(0, int(1.0 * self.sr), 60, 100)], int(1.5 * self.sr), {}, {})
+        y = self._surge_raw(slot, [(0, int(1.0 * self.sr), 60, 100)], int(1.5 * self.sr), slot.params, {})
         f0 = f0_median(y[: self.sr], self.sr, 25, 2500)
         semis = int(12 * round(np.log2(f0 / 261.6256))) if np.isfinite(f0) else 0
         if np.isfinite(f0) and abs(12 * np.log2(f0 / 261.6256) - semis) > 0.5:
@@ -173,18 +216,20 @@ class Renderer:
         notes = [(a, b, p - semis, v) for a, b, p, v in notes if 0 <= p - semis <= 127]
         lanes = {tgt.split(".", 1)[1]: ln for tgt, ln in lanes_for(self.p, t.id).items() if tgt.startswith(slot.id + ".")}
         autom = {k: curve(ln, self.tm, self.n) for k, ln in lanes.items()}
-        payload = {"notes": notes, "params": slot.params, "n": self.n, "sr": self.sr,
+        from .render_service import environment_manifest
+        payload = {"environment": environment_manifest(), "notes": notes, "params": slot.params, "n": self.n, "sr": self.sr,
                    "automation": {k: ln.model_dump(mode="json") for k, ln in lanes.items()}}
         key = cache_key("surge_track", RENDER_VERSION, [slot.preset or "default"], payload)
-        hit = self.cache.get(key)
-        if hit:
-            y, _ = sf.read(str(hit / "audio.wav"), dtype="float32", always_2d=True)
-        else:
-            y = self._surge_raw(slot, notes, self.n, slot.params, autom)
-            with tempfile.TemporaryDirectory() as td:
-                f = Path(td) / "audio.wav"
-                sf.write(f, y, self.sr, subtype="FLOAT")
-                self.cache.put_files(key, {"audio.wav": f}, {"track": t.id, "preset": slot.preset})
+        with self.cache.lock(cache_key("surge_generation", "1", [key])):
+            hit = self.cache.get(key)
+            if hit:
+                y, _ = sf.read(str(hit / "audio.wav"), dtype="float32", always_2d=True)
+            else:
+                y = self._surge_raw(slot, notes, self.n, slot.params, autom)
+                with tempfile.TemporaryDirectory() as td:
+                    f = Path(td) / "audio.wav"
+                    sf.write(f, y, self.sr, subtype="FLOAT")
+                    self.cache.put_files(key, {"audio.wav": f}, {"track": t.id, "preset": slot.preset})
         self.report.frozen[t.id] = hashlib.sha256(y.tobytes()).hexdigest()
         return y
 
@@ -193,20 +238,21 @@ class Renderer:
         y = np.zeros((self.n, 2), np.float32)
         for c in t.clips:
             if isinstance(c, AudioClip):
-                src = self._asset_audio(c.asset)[c.source_offset:c.source_offset + c.source_length].copy()
+                src = self._asset_audio(c.asset, c.source_offset, c.source_length)
                 if c.fade_in:
-                    k = min(c.fade_in, len(src))
+                    k = min(round(c.fade_in * self.sr / (self.p.assets[c.asset].sample_rate or self.sr)), len(src))
                     src[:k] *= np.linspace(0, 1, k)[:, None]
                 if c.fade_out:
-                    k = min(c.fade_out, len(src))
-                    src[len(src) - k:] *= np.linspace(1, 0, k)[:, None]
+                    k = min(round(c.fade_out * self.sr / (self.p.assets[c.asset].sample_rate or self.sr)), len(src))
+                    if k:
+                        src[len(src) - k:] *= np.linspace(1, 0, k)[:, None]
                 a = self.tm.tick_to_sample(c.start_tick)
                 k = min(len(src), self.n - a)
                 y[a:a + k] += src[:k] * np.float32(10 ** (c.gain_db / 20))
         if t.kind == TrackKind.instrument and t.plugins:
             inst = t.plugins[0]
             notes = self._notes_abs(t)
-            if notes:
+            if notes and not inst.bypass:
                 if inst.backend == "surge_xt":
                     y += self._render_surge(t, inst, notes)
                 elif inst.backend == "builtin" and inst.uri in INSTRUMENTS_BUILTIN:
@@ -224,10 +270,12 @@ class Renderer:
         for o in self.p.tracks:
             if o.id == t.id:
                 continue
-            if o.output == t.id and o.kind != TrackKind.master:
+            # Una alimentadora del solo solo entrega su salida a otra alimentadora (cadena hacia
+            # un envío); hacia una pista audible su señal seca queda en silencio.
+            if o.output == t.id and o.kind != TrackKind.master and (o.id not in self.feeders or t.id in self.feeders):
                 x = x + self.post[o.id]
             for s in o.sends:
-                if s.target == t.id:
+                if s.target == t.id and (o.id not in self.feeders or t.id in self.feeders or t.id in self.solo_core):
                     src = self.pre[o.id] if s.pre_fader else self.post[o.id]
                     x = x + src * np.float32(10 ** (s.level_db / 20))
         self.dry[t.id] = x
@@ -244,9 +292,9 @@ class Renderer:
             except ValueError as e:
                 self.report.warnings.append(f"{t.id}: {e}; se aplica sin automatización")
                 x = apply_effect(slot.uri, slot.params, x, self.sr, self.bpm, sc).astype(np.float32)
-        self.pre[t.id] = x
-        if t.mute:
+        if (t.id not in self.audible and t.id not in self.feeders) or t.mute:
             x = np.zeros_like(x)
+        self.pre[t.id] = x
         g_db = curve(lanes["gain_db"], self.tm, self.n) if "gain_db" in lanes else np.full(self.n, t.gain_db)
         pan = curve(lanes["pan"], self.tm, self.n) if "pan" in lanes else np.full(self.n, t.pan)
         gl, gr = pan_gain_curve(pan)
@@ -276,19 +324,44 @@ class Renderer:
                     break
         return self.post[tid]
 
+    def validate_capabilities(self):
+        for t in self.p.tracks:
+            if t.kind == TrackKind.instrument and t.plugins:
+                inst = t.plugins[0]
+                if not inst.bypass and not (inst.backend == "surge_xt" or
+                   (inst.backend == "builtin" and inst.uri in INSTRUMENTS_BUILTIN)):
+                    raise ValueError(f"instrumento no soportado: {t.id}/{inst.uri}")
+            for slot in self._effects(t):
+                if slot.backend != "builtin" or slot.uri not in EFFECTS:
+                    raise ValueError(f"efecto no soportado para entrega: {t.id}/{slot.uri}")
+            for slot in t.plugins:
+                if slot.state and not slot.bypass:
+                    raise ValueError(f"estado de plugin no soportado para entrega: {t.id}/{slot.id}")
+
     # ---------------------------------------------------------------- render completo
     def run(self, profile: str | MasterProfile | None = None):
         """Mezcla y master en memoria: (premaster, MasterResult, perfil)."""
         prof = profile if isinstance(profile, MasterProfile) else load_profile(profile or self.p.master_profile)
         pre = self.output(self.graph.master)
-        self.report.premaster_lufs = round(integrated_lufs(pre, self.sr), 2)
+        measured = integrated_lufs(pre, self.sr)
+        self.report.premaster_lufs = round(measured, 2) if np.isfinite(measured) else None
         res = master(pre, self.sr, prof)
         self.last_master = res.audio
-        self.report.lufs = round(res.lufs, 2)
-        self.report.true_peak_dbtp = round(res.true_peak_dbtp, 2)
+        self.report.lufs = round(res.lufs, 2) if res.lufs is not None else None
+        self.report.true_peak_dbtp = round(res.true_peak_dbtp, 2) if res.true_peak_dbtp is not None else None
+        self.report.mastering_status = res.status
+        self.report.mastering_converged = res.converged
+        self.report.mastering_unmet = res.unmet
         self.report.profile = res.profile
         self.report.mastering_log = res.log
-        self.report.quality = quality_report(res.audio, self.sr, prof.ceiling_dbtp, prof.target_lufs, pre)
+        if res.lufs is None:
+            self.report.quality = {"status": "FAIL", "lufs": None, "true_peak_dbtp": res.true_peak_dbtp,
+                                   "checks": [{"check": "loudness", "status": "FAIL", "detail": res.status}]}
+        else:
+            self.report.quality = quality_report(res.audio, self.sr, prof.ceiling_dbtp, prof.target_lufs, pre)
+        if not res.converged:
+            self.report.quality["status"] = "FAIL"
+            self.report.warnings.append(f"mastering {res.status}: {', '.join(res.unmet)}")
         return pre, res, prof
 
     def render(self, out_dir: Path, profile: str | MasterProfile | None = None, stems: bool = True,

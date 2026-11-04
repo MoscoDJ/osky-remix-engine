@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from ..audio.renderer import Renderer
 from ..core.operations import Context
-from ..core.revisions import ProjectRepo
+from ..core.revisions import ProjectRepo, RepoError
 from ..core.transactions import TransactionError, apply_ops, parse_ops
 from .actions import plan_actions
 from .evaluator import Evaluation, evaluate
@@ -45,7 +45,8 @@ def assess(p, repo: ProjectRepo, policy: Policy = DEFAULT, profile: str | None =
 
 def improve(repo: ProjectRepo, branch: str, policy: Policy = DEFAULT, profile: str | None = None,
             log=print) -> ImproveResult:
-    p = repo.load(branch)
+    expected = repo.resolve(branch)
+    p = repo.load(expected)
     ev = assess(p, repo, policy, profile)
     log(f"inicial: {ev.summary()}")
     out = ImproveResult(initial=ev, final=ev)
@@ -66,7 +67,13 @@ def improve(repo: ProjectRepo, branch: str, policy: Policy = DEFAULT, profile: s
         better = ev2.score <= ev.score - policy.min_improvement or (ev2.score == 0 and ev.score > 0)
         if better:
             msg = "Agente: " + "; ".join(a.rationale for a in acts) + f" (puntaje {ev.score:.2f}→{ev2.score:.2f})"
-            rev = repo.commit(parse_ops(ops), policy.author, msg[:500], branch)
+            try:
+                rev = repo.commit(parse_ops(ops), policy.author, msg[:500], branch, expected_head=expected)
+            except RepoError as e:
+                out.needs_user.append(str(e))
+                out.steps.append(Step(it, [a.rationale for a in acts], ev.score, ev2.score, False, None, str(e)))
+                break
+            expected = rev.id
             out.steps.append(Step(it, [a.rationale for a in acts], ev.score, ev2.score, True, rev.id))
             log(f"it{it}: ACEPTADO {ev.score:.2f}→{ev2.score:.2f} · " + "; ".join(a.rationale for a in acts))
             p, ev = cand, ev2

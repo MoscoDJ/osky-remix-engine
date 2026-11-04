@@ -9,24 +9,62 @@
       "type": "integer"
     },
     "lufs": {
-      "default": 0.0,
-      "title": "Lufs",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lufs"
     },
     "true_peak_dbtp": {
-      "default": 0.0,
-      "title": "True Peak Dbtp",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "True Peak Dbtp"
     },
     "premaster_lufs": {
-      "default": 0.0,
-      "title": "Premaster Lufs",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Premaster Lufs"
     },
     "profile": {
       "additionalProperties": true,
       "title": "Profile",
       "type": "object"
+    },
+    "mastering_status": {
+      "default": "unknown",
+      "title": "Mastering Status",
+      "type": "string"
+    },
+    "mastering_converged": {
+      "default": false,
+      "title": "Mastering Converged",
+      "type": "boolean"
+    },
+    "mastering_unmet": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mastering Unmet",
+      "type": "array"
     },
     "mastering_log": {
       "items": {

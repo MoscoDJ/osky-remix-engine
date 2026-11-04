@@ -10,11 +10,12 @@ aplican de forma atómica (todo o nada) en una revisión nueva.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from dataclasses import dataclass, field
 
 from ..core.config import REPO_ROOT
-from ..core.models import Project
+from ..core.models import Project, AudioClip, MidiClip, AutomationLane, Marker
 from . import bass as B
 from . import drums as D
 from . import harmony as H
@@ -224,6 +225,43 @@ def section_meta(secs: list[dict]) -> list[dict]:
              **({"region": s["_region"]} if "_region" in s else {})} for s in secs]
 
 
+def _fingerprint(obj):
+    return hashlib.sha256(json.dumps(obj.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _ownership(ops: list[dict], previous: dict | None = None) -> dict:
+    """Contenido generado exacto: una edición posterior deja de ser reemplazable."""
+    registry = copy.deepcopy(previous or {"clips": {}, "automation": {}, "markers": {}})
+    registry.setdefault("clip_tracks", {})
+    registry.setdefault("automation_tracks", {})
+    for op in ops:
+        if op["op"] == "add_clip":
+            raw = op["clip"]
+            obj = (AudioClip if raw["type"] == "audio" else MidiClip).model_validate(raw)
+            registry["clips"][obj.id] = _fingerprint(obj)
+            registry["clip_tracks"][obj.id] = op["track"]
+        elif op["op"] == "set_automation":
+            obj = AutomationLane.model_validate(op["lane"])
+            registry["automation"][obj.id] = _fingerprint(obj)
+            registry["automation_tracks"][obj.id] = obj.track
+        elif op["op"] == "add_marker":
+            obj = Marker.model_validate(op["marker"])
+            registry["markers"][obj.id] = _fingerprint(obj)
+        elif op["op"] == "delete_clip":
+            registry["clips"].pop(op["clip"], None)
+            registry["clip_tracks"].pop(op["clip"], None)
+        elif op["op"] == "delete_automation":
+            registry["automation"].pop(op["lane"], None)
+            registry["automation_tracks"].pop(op["lane"], None)
+        elif op["op"] == "remove_marker":
+            registry["markers"].pop(op["marker"], None)
+    return registry
+
+
+def _record_ownership(ops, previous=None):
+    ops.append({"op": "set_meta", "key": "generated_content", "value": _ownership(ops, previous)})
+
+
 def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], prefix: str = "",
             variant: str = "A", compose_meta: dict | None = None) -> Plan:
     """``presets``: rol -> sha del .fxp ya registrado (o ausente para usar el integrado)."""
@@ -300,21 +338,67 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
         "variant": variant, "label": VARIANTS[variant]["label"], "prefix": prefix, "sections": section_meta(parts.sections)}})
     if compose_meta:
         ops.append({"op": "set_meta", "key": "compose", "value": compose_meta})
+    _record_ownership(ops)
     return Plan(ops=ops, sections=parts.sections, tracks=tracks)
 
 
-def rearrange(p: Project, tpl: dict, ctx: ComposeContext, bars: int, variant: str, prefix: str) -> Plan:
-    """Nuevo arreglo sobre un proyecto existente sin tocar pistas bloqueadas."""
+def legacy_ownership(p: Project) -> dict:
+    """Registro para proyectos anteriores al seguimiento de procedencia.
+
+    Reproduce el criterio previo: todo clip de una pista generada, las lanes ``auto-*``
+    y todos los marcadores se consideran contenido generado (reemplazable).
+    """
+    registry = {"clips": {}, "automation": {}, "markers": {}, "clip_tracks": {}, "automation_tracks": {}}
+    for t in p.tracks:
+        if t.id in TRACK_ORDER:
+            for c in t.clips:
+                registry["clips"][c.id] = _fingerprint(c)
+                registry["clip_tracks"][c.id] = t.id
+    for a in p.automation:
+        if "auto-" in a.id:
+            registry["automation"][a.id] = _fingerprint(a)
+            registry["automation_tracks"][a.id] = a.track
+    for m in p.markers:
+        registry["markers"][m.id] = _fingerprint(m)
+    return registry
+
+
+def rearrange(p: Project, tpl: dict, ctx: ComposeContext, bars: int, variant: str, prefix: str,
+              adopt_legacy: bool = False) -> Plan:
+    """Nuevo arreglo sobre un proyecto existente sin tocar pistas bloqueadas.
+
+    Un proyecto sin ``generated_content`` (creado antes del registro de procedencia) se
+    conserva entero salvo que ``adopt_legacy`` indique tratar su contenido como generado.
+    """
     parts = generate_parts(tpl, ctx, bars, prefix, variant)
     existing = {t.id: t for t in p.tracks}
     free = {t for t in TRACK_ORDER if t in existing and not existing[t].locked}
+    legacy = "generated_content" not in p.meta
+    if legacy and adopt_legacy:
+        registry = legacy_ownership(p)
+    else:
+        registry = p.meta.get("generated_content", {"clips": {}, "automation": {}, "markers": {}})
+    def owned(kind, obj):
+        return registry.get(kind, {}).get(obj.id) == _fingerprint(obj)
+    # Cualquier clip/lane manual o editado conserva la pista completa, aun sin bloqueo.
+    manual = {t for t in free if any(not owned("clips", c) for c in existing[t].clips)
+              or any(not owned("automation", a) for a in p.automation if a.track == t)}
+    clip_ids = {c.id for track in p.tracks for c in track.clips}
+    lane_ids = {a.id for a in p.automation}
+    manual |= {track for cid, track in registry.get("clip_tracks", {}).items() if cid not in clip_ids}
+    manual |= {track for aid, track in registry.get("automation_tracks", {}).items() if aid not in lane_ids}
+    free -= manual
     locked = [t for t in TRACK_ORDER if t in existing and existing[t].locked]
     ops: list[dict] = []
     for t in sorted(free):
         ops += [{"op": "delete_clip", "clip": c.id} for c in existing[t].clips]
-    ops += [{"op": "delete_automation", "lane": a.id} for a in p.automation if a.track in free and "auto-" in a.id]
-    ops += [{"op": "remove_marker", "marker": m.id} for m in p.markers]
+    ops += [{"op": "delete_automation", "lane": a.id} for a in p.automation if a.track in free and owned("automation", a)]
+    ops += [{"op": "remove_marker", "marker": m.id} for m in p.markers if owned("markers", m)]
     skipped = [f"pista bloqueada '{t}': se conserva tal cual" for t in locked]
+    if legacy and not adopt_legacy and manual:
+        skipped.append("proyecto anterior al registro de procedencia: no se sabe qué contenido es generado, "
+                       "se conserva todo (usa --adopt-legacy para regenerarlo como antes)")
+    skipped += [f"pista manual o sin procedencia {t}: se conserva" for t in sorted(manual)]
     for tr, c in parts.clips:
         if tr in free:
             ops.append({"op": "add_clip", "track": tr, "clip": c})
@@ -325,9 +409,11 @@ def rearrange(p: Project, tpl: dict, ctx: ComposeContext, bars: int, variant: st
         slot = next((s for s in existing[track].plugins if s.uri == fx and s.backend == "builtin"), None)
         return None if slot is None else f"{slot.id}.{param}"
     ops += _lane_ops(parts.autom, resolve, prefix, free)
-    ops += _marker_ops(parts.sections, prefix)
+    preserved_markers = {m.id for m in p.markers if not owned("markers", m)}
+    ops += [op for op in _marker_ops(parts.sections, prefix) if op["marker"]["id"] not in preserved_markers]
     ops.append({"op": "set_meta", "key": "arrangement", "value": {
         "variant": variant, "label": VARIANTS[variant]["label"], "prefix": prefix, "sections": section_meta(parts.sections)}})
+    _record_ownership(ops, registry)
     return Plan(ops=ops, sections=parts.sections, tracks=sorted(free), skipped=skipped)
 
 

@@ -40,7 +40,7 @@ export default function Player({ url, prj, info }: { url: string | null; prj: Pr
   return (
     <div className="player">
       <div className="toolbar">
-        <button disabled={!ready} onClick={() => ws.current?.playPause()} data-testid="play">▶︎ / ❚❚</button>
+        <button disabled={!url || !ready} onClick={() => ws.current?.playPause()} data-testid="play">▶︎ / ❚❚</button>
         <span className="time">{t.toFixed(1)} s</span>
         {info && <span className="hint">{info}</span>}
       </div>

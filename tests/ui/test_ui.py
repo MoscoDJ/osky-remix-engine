@@ -145,3 +145,38 @@ def test_render_and_ab(page, server):
     assert page.locator("text=kick.gain_db").count() >= 1
     page.click("[data-testid=ab-toggle]")
     assert "Escuchando B" in page.inner_text("[data-testid=ab-toggle]")
+
+
+def test_selected_branch_revert_preserves_main(page, server):
+    repo = server['repo']
+    name = 'ui-revert'
+    repo.create_branch(name, 'main')
+    initial = repo.head(name)
+    repo.commit([{'op':'set_track','track':'kick','gain_db':-11}], 'user', 'branch edit', name)
+    main = repo.head('main')
+    open_app(page, server)
+    page.select_option('select[aria-label=rama]', name)
+    page.wait_for_function("document.querySelector('aside').textContent.includes('branch edit')")
+    page.locator(f'[data-rev="{initial}"] button').click()
+    deadline = time.time() + 10
+    while time.time() < deadline and repo.log(name,1)[0].kind != 'revert':
+        time.sleep(.1)
+    assert repo.head('main') == main
+    assert repo.load(name).content_hash() == repo.load(initial).content_hash()
+
+
+def test_solo_button_changes_rendered_signal(page, server):
+    import numpy as np
+    from osky_remix.audio.renderer import Renderer
+    open_app(page, server)
+    page.click('text=Mezclador')
+    page.locator('[data-strip="kick"] button', has_text='S').click()
+    deadline = time.time() + 10
+    repo = server['repo']
+    while time.time() < deadline and not repo.load('main').track('kick').solo:
+        time.sleep(.1)
+    r = Renderer(repo.load('main'), repo.assets, repo.cache)
+    r.output('master')
+    assert np.any(r.output('kick'))
+    assert not np.any(r.output('vox'))
+    assert not np.any(r.output('pad'))

@@ -38,6 +38,19 @@ class MasterProfile:
     glue_ratio: float = 2.0
 
 
+    def __post_init__(self):
+        for f in fields(self):
+            v = getattr(self, f.name)
+            if f.name != "name" and v is not None and not np.isfinite(v):
+                raise ValueError(f"perfil: {f.name} debe ser finito")
+        if not -70 <= self.target_lufs <= 0 or not -30 <= self.ceiling_dbtp <= 0:
+            raise ValueError("perfil: objetivo/techo fuera de rango")
+        if not 0 < self.lookahead_ms <= 1000 or not 0 < self.release_ms <= 10000:
+            raise ValueError("perfil: tiempos inválidos")
+        if self.low_mono_hz < 0 or self.glue_ratio < 1:
+            raise ValueError("perfil: filtro/ratio inválido")
+
+
 PROFILES = {
     "club": MasterProfile("club", target_lufs=-9.0, ceiling_dbtp=-1.0),
     "streaming": MasterProfile("streaming", target_lufs=-14.0, ceiling_dbtp=-1.0),
@@ -67,13 +80,16 @@ def load_profile(name_or_path: str) -> MasterProfile:
 @dataclass
 class MasterResult:
     audio: np.ndarray
-    lufs: float
-    true_peak_dbtp: float
+    lufs: float | None
+    true_peak_dbtp: float | None
     gain_db: float
     iterations: int
     log: list[str] = field(default_factory=list)
     staging_db: float = 0.0
     profile: dict = field(default_factory=dict)
+    converged: bool = True
+    status: str = "converged"
+    unmet: list[str] = field(default_factory=list)
 
 
 def true_peak_envelope(x: np.ndarray, oversample: int = OVERSAMPLE) -> np.ndarray:
@@ -150,9 +166,24 @@ def _pre_chain(x: np.ndarray, sr: int, prof: MasterProfile, log: list[str]) -> t
 
 def master(audio: np.ndarray, sr: int, profile: MasterProfile, max_iter: int = 8) -> MasterResult:
     """Lleva el audio al objetivo del perfil sin superar el techo de true peak."""
+    if max_iter < 1:
+        raise ValueError("max_iter debe ser positivo")
+    audio = _as_frames(audio)
+    if not audio.size or not np.isfinite(audio).all():
+        raise ValueError("audio vacío o con NaN/Inf")
+    if not 0 <= profile.low_mono_hz < sr / 2:
+        raise ValueError("frecuencia de mono fuera de Nyquist")
+    if not np.any(audio):
+        return MasterResult(audio.astype(np.float32), None, None, 0, 0, ["silencio"],
+                            profile=asdict(profile), converged=False, status="silent", unmet=["loudness"])
     log: list[str] = []
     x, staging = _pre_chain(_as_frames(audio).astype(np.float64), sr, profile, log)
-    gain_db = profile.target_lufs - integrated_lufs(x, sr)
+    initial_lufs = integrated_lufs(x, sr)
+    if not np.isfinite(initial_lufs):
+        return MasterResult(x.astype(np.float32), None, true_peak_dbtp(x, sr), 0, 0,
+                            ["señal bajo el umbral de medición"], profile=asdict(profile),
+                            converged=False, status="unmeasurable", unmet=["loudness"])
+    gain_db = profile.target_lufs - initial_lufs
     margin = 0.1
     y = x
     for it in range(1, max_iter + 1):
@@ -166,7 +197,8 @@ def master(audio: np.ndarray, sr: int, profile: MasterProfile, max_iter: int = 8
             return MasterResult(y.astype(np.float32), lufs, tp, gain_db, it, log, staging, asdict(profile))
         if not ok_tp:
             margin += (tp - profile.ceiling_dbtp) + 0.05
-        if not ok_lufs:
+        if not ok_lufs and it < max_iter:
             gain_db += profile.target_lufs - lufs
     return MasterResult(y.astype(np.float32), integrated_lufs(y, sr), true_peak_dbtp(y, sr), gain_db, max_iter, log,
-                        staging, asdict(profile))
+                        staging, asdict(profile), False, "not_converged",
+                        [k for k, ok in (("true_peak", ok_tp), ("loudness", ok_lufs)) if not ok])

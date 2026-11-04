@@ -45,4 +45,12 @@ def quality_report(master: np.ndarray, sr: int, ceiling_dbtp: float, target_lufs
         pm = _as_frames(premaster)
         rep["premaster"] = {"lufs": round(integrated_lufs(pm, sr), 2), "peak_dbfs": round(sample_peak_dbfs(pm), 2)}
         rep["limiting_gain_reduction_db_est"] = round((integrated_lufs(pm, sr) - lufs), 2)
-    return rep
+    def finite(value):
+        if isinstance(value, dict):
+            return {k: finite(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [finite(v) for v in value]
+        if isinstance(value, (float, np.floating)) and not np.isfinite(value):
+            return None
+        return value
+    return finite(rep)

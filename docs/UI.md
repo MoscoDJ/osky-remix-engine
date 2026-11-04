@@ -41,3 +41,12 @@ contrato rechaza se informa con el índice y el motivo, y no se aplica nada.
 
 `tests/integration/test_api.py` (API) y `tests/ui/test_ui.py` (Playwright: el navegador bloquea,
 mueve faders y clips, edita notas, renderiza y compara; se verifica el efecto en el historial).
+
+
+## Control seguro de revisiones
+
+El historial indica la rama que se revertirá. La reversión exige que su revisión siga siendo
+la mostrada; si hubo una edición concurrente, hay que recargar. Render y evaluación fijan la
+revisión visible y el perfil solicitado. La reproducción de un render anterior se oculta al
+cambiar el contenido del proyecto. Los trabajos de render/evaluación se pueden cancelar desde
+la interfaz; la API también ofrece `POST /api/jobs/{id}/cancel`.

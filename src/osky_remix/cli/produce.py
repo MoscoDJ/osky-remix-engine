@@ -42,7 +42,7 @@ def build_compose_context(repo, analysis: str, vocals: str | None, at: str, bars
     if vocals:
         vsha, vpath = _asset_path(repo, vocals)
         ratio = ctx.ratio
-        key = cache_key("stretch", "1", [vsha], {"ratio": round(ratio, 10)})
+        key = cache_key("stretch", "1", [vsha], {"ratio": round(ratio, 10), "rubberband": rubberband_version()})
         hit = repo.cache.get_json(key)
         st_asset = None
         if hit and repo.assets.exists(hit["sha"]):
@@ -218,16 +218,8 @@ def graph(name: str, rev: Optional[str] = typer.Option(None, "--rev")):
 
 
 def _render_cached(repo, name: str, rev: str, profile: str):
-    """Render de una revisión, reutilizado si ya existe con el mismo perfil."""
-    from ..audio.renderer import RENDER_VERSION, Renderer
-    from ..core.config import workspace
-    rid = repo.resolve(rev)
-    out = workspace() / "renders" / name / f"{rid[:12]}-{Path(profile).stem}-{RENDER_VERSION}"
-    rep_f = out / "mix_report.json"
-    if rep_f.exists():
-        return rid, json.loads(rep_f.read_text()), out
-    r = Renderer(repo.load(rid), repo.assets, repo.cache).render(out, profile, stems=False)
-    return rid, r.__dict__, out
+    from ..audio.render_service import render_cached
+    return render_cached(repo, name, rev, profile)
 
 
 def compare(name: str, a: str, b: str, profile: str = typer.Option("club", "--profile", help="mismo perfil para A y B"),

@@ -37,32 +37,34 @@ export const api = {
   state: (p: string, rev?: string) => fetch(`/api/projects/${p}/state${rev ? `?rev=${encodeURIComponent(rev)}` : ""}`).then(j<State>),
   log: (p: string, branch: string) => fetch(`/api/projects/${p}/log?branch=${encodeURIComponent(branch)}&limit=40`).then(j<Revision[]>),
   profiles: () => fetch("/api/profiles").then(j<string[]>),
-  ops: (p: string, ops: object[], message: string, branch: string) =>
+  ops: (p: string, ops: object[], message: string, branch: string, expected_head?: string) =>
     fetch(`/api/projects/${p}/ops`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ops, message, branch }) }).then(j<{ ok: boolean; revision: string }>),
+      body: JSON.stringify({ ops, message, branch, expected_head }) }).then(j<{ ok: boolean; revision: string }>),
   branch: (p: string, name: string, from_rev: string) =>
     fetch(`/api/projects/${p}/branches`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, from_rev }) }).then(j<{ branch: string }>),
   checkout: (p: string, ref: string) =>
     fetch(`/api/projects/${p}/checkout`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ ref }) }).then(j<{ current: string }>),
-  revert: (p: string, ref: string) =>
+  revert: (p: string, ref: string, branch: string, expected_head: string) =>
     fetch(`/api/projects/${p}/revert`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref }) }).then(j<{ revision: string }>),
+      body: JSON.stringify({ ref, branch, expected_head }) }).then(j<{ revision: string }>),
   peaks: (p: string, sha: string) => fetch(`/api/projects/${p}/assets/${sha}/peaks?n=2000`).then(j<{ peaks: number[]; hop: number; frames: number }>),
   job: (p: string, body: object) =>
     fetch(`/api/projects/${p}/jobs`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(body) }).then(j<{ job: string }>),
+  cancelJob: (id: string) => fetch(`/api/jobs/${id}/cancel`, { method: "POST" }).then(j),
   getJob: (id: string) => fetch(`/api/jobs/${id}`).then(j<Job>),
 };
 
 /** Espera un trabajo: por WebSocket si llega el evento, con sondeo de respaldo. */
-export async function runJob(p: string, body: object): Promise<any> {
+export async function runJob(p: string, body: object, onJob?: (id: string) => void): Promise<any> {
   const { job } = await api.job(p, body);
+  onJob?.(job);
   for (;;) {
     const s = await api.getJob(job);
     if (s.status === "done") return s.result;
-    if (s.status === "failed") throw new Error(s.error || "falló el trabajo");
+    if (s.status === "failed" || s.status === "cancelled") throw new Error(s.error || "falló el trabajo");
     await new Promise((r) => setTimeout(r, 400));
   }
 }

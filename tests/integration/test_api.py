@@ -105,3 +105,31 @@ def test_peaks_and_file_guard(client):
     assert 90 <= len(pk["peaks"]) <= 110 and abs(max(pk["peaks"]) - 0.2) < 0.01
     assert client.get("/files/../../etc/passwd").status_code == 404
     assert client.get("/files/projects/demo/project.db").status_code in (403, 404)
+
+
+def test_revert_targets_selected_branch_and_rejects_stale_state(client):
+    base = client.get("/api/projects/demo/state").json()["revision"]
+    client.post("/api/projects/demo/branches", json={"name": "alt"})
+    edited = client.post("/api/projects/demo/ops", json={"ops": [
+        {"op": "set_track", "track": "kick", "gain_db": -8}], "message": "alt", "branch": "alt"}).json()["revision"]
+    main = client.get("/api/projects/demo/state?rev=main").json()
+    body = {"ref": base, "branch": "alt", "expected_head": edited}
+    result = client.post("/api/projects/demo/revert", json=body)
+    assert result.status_code == 200
+    assert client.get("/api/projects/demo/state?rev=main").json() == main
+    alt = client.get("/api/projects/demo/state?rev=alt").json()
+    assert alt["project"] == main["project"]
+    assert client.post("/api/projects/demo/revert", json=body).status_code == 400
+    assert client.get("/api/projects/demo/state?rev=alt").json() == alt
+
+
+def test_submit_freezes_revision_and_profile(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(client.app.state.queue, 'submit', lambda p,k,params: captured.append(params) or 'frozen')
+    revision = client.get('/api/projects/demo/state?rev=main').json()['revision']
+    assert client.post('/api/projects/demo/jobs', json={'kind':'render', 'rev':'main'}).status_code == 200
+    client.post('/api/projects/demo/ops', json={'ops':[{'op':'set_track','track':'kick','gain_db':-5}], 'message':'later'})
+    assert captured[0]['rev'] == revision
+    assert isinstance(captured[0]['resolved_profile']['target_lufs'], float)
+    client.post('/api/projects/demo/jobs', json={'kind':'compare','a':revision,'b':'main'})
+    assert captured[1]['a'] == revision and captured[1]['b'] != revision

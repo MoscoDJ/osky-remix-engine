@@ -280,6 +280,11 @@ class Project(Strict):
         return self
 
     # utilidades
+    def audio_length(self, clip: AudioClip) -> int:
+        """Duración remuestreada; ceil coincide con scipy.resample_poly."""
+        sr = self.assets[clip.asset].sample_rate or self.sample_rate
+        return (clip.source_length * self.sample_rate + sr - 1) // sr
+
     def track(self, track_id: str) -> Track:
         for t in self.tracks:
             if t.id == track_id:
