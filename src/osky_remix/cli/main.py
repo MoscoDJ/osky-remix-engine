@@ -2,7 +2,7 @@ import typer
 
 from .analyze import analyze, ingest, separate
 from .doctor import doctor
-from .produce import compose, render
+from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
 
 app = typer.Typer(help="Osky Remix Engine: producción de remixes headless operada por Claude.",
@@ -13,6 +13,10 @@ app.command("separate")(separate)
 app.command("analyze")(analyze)
 app.command("compose")(compose)
 app.command("render")(render)
+app.command("graph")(graph)
+app.command("compare")(compare)
+app.command("export")(export)
+app.add_typer(package_app, name="package")
 app.add_typer(project_app, name="project")
 app.add_typer(op_app, name="op")
 app.add_typer(asset_app, name="asset")

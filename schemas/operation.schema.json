@@ -96,6 +96,31 @@
       "title": "AddPlugin",
       "type": "object"
     },
+    "AddSend": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_send",
+          "default": "add_send",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "send": {
+          "$ref": "#/$defs/Send"
+        }
+      },
+      "required": [
+        "track",
+        "send"
+      ],
+      "title": "AddSend",
+      "type": "object"
+    },
     "AddTrack": {
       "additionalProperties": false,
       "properties": {
@@ -834,6 +859,33 @@
       "title": "RemovePlugin",
       "type": "object"
     },
+    "RemoveSend": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "remove_send",
+          "default": "remove_send",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track",
+        "target"
+      ],
+      "title": "RemoveSend",
+      "type": "object"
+    },
     "RemoveTrack": {
       "additionalProperties": false,
       "properties": {
@@ -886,6 +938,31 @@
       "title": "ReplacePlugin",
       "type": "object"
     },
+    "Send": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "level_db": {
+          "default": 0.0,
+          "title": "Level Db",
+          "type": "number"
+        },
+        "pre_fader": {
+          "default": false,
+          "title": "Pre Fader",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "Send",
+      "type": "object"
+    },
     "SetAutomation": {
       "additionalProperties": false,
       "properties": {
@@ -924,6 +1001,27 @@
         "key"
       ],
       "title": "SetKey",
+      "type": "object"
+    },
+    "SetMasterProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_master_profile",
+          "default": "set_master_profile",
+          "title": "Op",
+          "type": "string"
+        },
+        "profile": {
+          "pattern": "^[a-z0-9_\\-]{1,64}$",
+          "title": "Profile",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "title": "SetMasterProfile",
       "type": "object"
     },
     "SetMeter": {
@@ -1242,6 +1340,7 @@
         "add_clip": "#/$defs/AddClip",
         "add_marker": "#/$defs/AddMarker",
         "add_plugin": "#/$defs/AddPlugin",
+        "add_send": "#/$defs/AddSend",
         "add_track": "#/$defs/AddTrack",
         "delete_automation": "#/$defs/DeleteAutomation",
         "delete_clip": "#/$defs/DeleteClip",
@@ -1250,10 +1349,12 @@
         "register_asset": "#/$defs/RegisterAsset",
         "remove_marker": "#/$defs/RemoveMarker",
         "remove_plugin": "#/$defs/RemovePlugin",
+        "remove_send": "#/$defs/RemoveSend",
         "remove_track": "#/$defs/RemoveTrack",
         "replace_plugin": "#/$defs/ReplacePlugin",
         "set_automation": "#/$defs/SetAutomation",
         "set_key": "#/$defs/SetKey",
+        "set_master_profile": "#/$defs/SetMasterProfile",
         "set_meter": "#/$defs/SetMeter",
         "set_midi_notes": "#/$defs/SetMidiNotes",
         "set_plugin_param": "#/$defs/SetPluginParam",
@@ -1279,6 +1380,12 @@
       },
       {
         "$ref": "#/$defs/UnlockTrack"
+      },
+      {
+        "$ref": "#/$defs/AddSend"
+      },
+      {
+        "$ref": "#/$defs/RemoveSend"
       },
       {
         "$ref": "#/$defs/RegisterAsset"
@@ -1324,6 +1431,9 @@
       },
       {
         "$ref": "#/$defs/SetKey"
+      },
+      {
+        "$ref": "#/$defs/SetMasterProfile"
       },
       {
         "$ref": "#/$defs/AddMarker"

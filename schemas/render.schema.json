@@ -1,0 +1,86 @@
+{
+  "properties": {
+    "sample_rate": {
+      "title": "Sample Rate",
+      "type": "integer"
+    },
+    "length_samples": {
+      "title": "Length Samples",
+      "type": "integer"
+    },
+    "lufs": {
+      "default": 0.0,
+      "title": "Lufs",
+      "type": "number"
+    },
+    "true_peak_dbtp": {
+      "default": 0.0,
+      "title": "True Peak Dbtp",
+      "type": "number"
+    },
+    "premaster_lufs": {
+      "default": 0.0,
+      "title": "Premaster Lufs",
+      "type": "number"
+    },
+    "profile": {
+      "additionalProperties": true,
+      "title": "Profile",
+      "type": "object"
+    },
+    "mastering_log": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mastering Log",
+      "type": "array"
+    },
+    "graph": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Graph",
+      "type": "array"
+    },
+    "tracks": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Tracks",
+      "type": "object"
+    },
+    "frozen": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Frozen",
+      "type": "object"
+    },
+    "quality": {
+      "additionalProperties": true,
+      "title": "Quality",
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "files": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Files",
+      "type": "object"
+    }
+  },
+  "required": [
+    "sample_rate",
+    "length_samples"
+  ],
+  "title": "RenderReport",
+  "type": "object"
+}

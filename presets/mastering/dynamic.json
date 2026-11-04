@@ -1,0 +1,7 @@
+{
+  "name": "dynamic",
+  "target_lufs": -16.0,
+  "ceiling_dbtp": -1.5,
+  "input_peak_dbfs": -6.0,
+  "release_ms": 120
+}

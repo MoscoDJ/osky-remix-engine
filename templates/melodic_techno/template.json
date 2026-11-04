@@ -1,49 +1,454 @@
 {
   "name": "melodic_techno",
-  "description": "Melodic techno: bombo 4x4, bajo rodante en semicorcheas, pads oscuros, arpegio con delay y lead que retoma la melodía de la voz.",
+  "description": "Melodic techno: bombo 4x4, bajo rodante en semicorcheas, pads oscuros, arpegio con delay y lead que retoma la melodía de la voz. Bus de batería con glue, retornos de reverb y eco compartidos, filtros que se abren por sección.",
   "bpm": 124,
-  "bpm_range": [120, 128],
+  "bpm_range": [
+    120,
+    128
+  ],
+  "master_profile": "melodic_techno_club",
   "instruments": {
-    "bass": {"surge_preset": "Basses/Rubber Bass", "range": [33, 45]},
-    "pad":  {"surge_preset": "Pads/Pad 1", "range": [50, 74]},
-    "arp":  {"surge_preset": "Plucks/Lo-Fi Pluck", "range": [62, 86]},
-    "lead": {"surge_preset": "Leads/Moogy Saw", "register": 74}
+    "bass": {
+      "surge_preset": "Basses/Rubber Bass",
+      "range": [
+        33,
+        45
+      ]
+    },
+    "pad": {
+      "surge_preset": "Pads/Pad 1",
+      "range": [
+        50,
+        74
+      ]
+    },
+    "arp": {
+      "surge_preset": "Plucks/Lo-Fi Pluck",
+      "range": [
+        62,
+        86
+      ]
+    },
+    "lead": {
+      "surge_preset": "Leads/Moogy Saw",
+      "register": 74
+    }
+  },
+  "buses": {
+    "drumbus": {
+      "fx": [
+        {
+          "uri": "compressor",
+          "params": {
+            "threshold_db": -19,
+            "ratio": 2.5,
+            "attack_ms": 20,
+            "release_ms": 120
+          }
+        }
+      ],
+      "gain_db": 5.0
+    }
+  },
+  "returns": {
+    "verb": {
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "reverb",
+          "params": {
+            "size": 0.92,
+            "damping": 0.6,
+            "wet": 1.0
+          }
+        }
+      ]
+    },
+    "echo": {
+      "fx": [
+        {
+          "uri": "delay",
+          "params": {
+            "beats": 0.75,
+            "feedback": 0.45,
+            "mix": 1.0
+          }
+        },
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 400
+          }
+        },
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 6000
+          }
+        }
+      ]
+    }
   },
   "mix": {
-    "kick":  {"gain_db": 0.0},
-    "drums": {"gain_db": -6.0, "fx": [{"uri": "highpass", "params": {"hz": 180}}]},
-    "bass":  {"gain_db": -4.0, "sidechain_from": "kick",
-              "fx": [{"uri": "highpass", "params": {"hz": 35}}, {"uri": "sidechain", "params": {"depth": 0.75, "release_ms": 130}}]},
-    "pad":   {"gain_db": -9.0, "sidechain_from": "kick",
-              "fx": [{"uri": "lowpass", "params": {"hz": 4500}}, {"uri": "reverb", "params": {"size": 0.9, "wet": 0.35}},
-                     {"uri": "sidechain", "params": {"depth": 0.6, "release_ms": 180}}]},
-    "arp":   {"gain_db": -10.0, "pan": 0.15, "sidechain_from": "kick",
-              "fx": [{"uri": "highpass", "params": {"hz": 250}}, {"uri": "delay", "params": {"beats": 0.75, "feedback": 0.45, "mix": 0.3}},
-                     {"uri": "reverb", "params": {"size": 0.7, "wet": 0.2}}, {"uri": "sidechain", "params": {"depth": 0.5, "release_ms": 150}}]},
-    "lead":  {"gain_db": -6.0, "sidechain_from": "kick",
-              "fx": [{"uri": "highpass", "params": {"hz": 200}}, {"uri": "delay", "params": {"beats": 0.75, "feedback": 0.4, "mix": 0.25}},
-                     {"uri": "reverb", "params": {"size": 0.85, "wet": 0.3}}, {"uri": "sidechain", "params": {"depth": 0.45, "release_ms": 150}}]},
-    "fx":    {"gain_db": -17.0, "fx": [{"uri": "reverb", "params": {"size": 0.95, "wet": 0.4}}]},
-    "vox":   {"gain_db": 0.0, "sidechain_from": "kick",
-              "fx": [{"uri": "highpass", "params": {"hz": 140}}, {"uri": "compressor", "params": {"threshold_db": -22, "ratio": 3.5}},
-                     {"uri": "eq", "params": {"high_db": 3, "high_hz": 6000}},
-                     {"uri": "delay", "params": {"beats": 0.75, "feedback": 0.3, "mix": 0.15}},
-                     {"uri": "reverb", "params": {"size": 0.85, "wet": 0.25}}, {"uri": "sidechain", "params": {"depth": 0.2, "release_ms": 120}}]}
+    "kick": {
+      "gain_db": 1.0,
+      "output": "drumbus"
+    },
+    "drums": {
+      "gain_db": -5.0,
+      "output": "drumbus",
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 180
+          }
+        }
+      ]
+    },
+    "bass": {
+      "gain_db": -4.0,
+      "sidechain_from": "kick",
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 35
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.75,
+            "release_ms": 130
+          }
+        }
+      ]
+    },
+    "pad": {
+      "gain_db": -9.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -8
+        }
+      ],
+      "fx": [
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 4500
+          }
+        },
+        {
+          "uri": "stereo",
+          "params": {
+            "width": 1.15
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.6,
+            "release_ms": 180
+          }
+        }
+      ]
+    },
+    "arp": {
+      "gain_db": -10.0,
+      "pan": 0.15,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -12
+        }
+      ],
+      "fx": [
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 9000
+          }
+        },
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "delay",
+          "params": {
+            "beats": 0.75,
+            "feedback": 0.45,
+            "mix": 0.3
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.5,
+            "release_ms": 150
+          }
+        }
+      ]
+    },
+    "lead": {
+      "gain_db": -6.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -8
+        },
+        {
+          "target": "echo",
+          "level_db": -10
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 200
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.45,
+            "release_ms": 150
+          }
+        }
+      ]
+    },
+    "fx": {
+      "gain_db": -11.0,
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -4
+        }
+      ]
+    },
+    "vox": {
+      "gain_db": 0.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -9
+        },
+        {
+          "target": "echo",
+          "level_db": -14
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 140
+          }
+        },
+        {
+          "uri": "compressor",
+          "params": {
+            "threshold_db": -22,
+            "ratio": 3.5
+          }
+        },
+        {
+          "uri": "eq",
+          "params": {
+            "high_db": 3,
+            "high_hz": 6000
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.2,
+            "release_ms": 120
+          }
+        }
+      ]
+    }
   },
   "arrangements": {
     "32": [
-      {"name": "intro", "bars": 8,  "kick": true, "drums": 1, "bass": "rolling", "pad": true, "fx": ["riser_end"], "fill": true},
-      {"name": "voz",   "bars": 16, "kick": true, "drums": 2, "bass": "rolling", "pad": true, "arp": true, "vocal": "phrase",
-       "fx": ["impact_start", "riser_end"], "fill": true},
-      {"name": "drop",  "bars": 8,  "kick": true, "drums": 3, "bass": "rolling", "arp": true, "lead": "vocal_melody", "fx": ["impact_start"]}
+      {
+        "name": "intro",
+        "bars": 8,
+        "kick": true,
+        "drums": 1,
+        "bass": "rolling",
+        "pad": true,
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 500,
+            "to": 4500
+          },
+          {
+            "track": "drums",
+            "fx": "highpass",
+            "param": "hz",
+            "from": 3000,
+            "to": 180,
+            "to_bar": 6
+          }
+        ]
+      },
+      {
+        "name": "voz",
+        "bars": 16,
+        "kick": true,
+        "drums": 2,
+        "bass": "rolling",
+        "pad": true,
+        "arp": true,
+        "vocal": "phrase",
+        "fx": [
+          "impact_start",
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "arp",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 700,
+            "to": 9000
+          }
+        ]
+      },
+      {
+        "name": "drop",
+        "bars": 8,
+        "kick": true,
+        "drums": 3,
+        "bass": "rolling",
+        "arp": true,
+        "lead": "vocal_melody",
+        "fx": [
+          "impact_start"
+        ]
+      }
     ],
     "64": [
-      {"name": "intro", "bars": 16, "kick": true, "drums": 1, "bass": "sustained", "pad": true, "fx": ["riser_end"], "fill": true},
-      {"name": "voz",   "bars": 16, "kick": true, "drums": 2, "bass": "rolling", "pad": true, "arp": true, "vocal": "phrase",
-       "fx": ["impact_start"], "fill": true},
-      {"name": "break", "bars": 16, "kick": false, "drums": null, "bass": null, "pad": true, "arp": true, "vocal": "phrase",
-       "fx": ["riser_end"], "fill": true},
-      {"name": "drop",  "bars": 16, "kick": true, "drums": 3, "bass": "rolling", "arp": true, "lead": "vocal_melody", "fx": ["impact_start"]}
+      {
+        "name": "intro",
+        "bars": 16,
+        "kick": true,
+        "drums": 1,
+        "bass": "sustained",
+        "pad": true,
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 500,
+            "to": 4500
+          },
+          {
+            "track": "drums",
+            "fx": "highpass",
+            "param": "hz",
+            "from": 3000,
+            "to": 180,
+            "to_bar": 12
+          }
+        ]
+      },
+      {
+        "name": "voz",
+        "bars": 16,
+        "kick": true,
+        "drums": 2,
+        "bass": "rolling",
+        "pad": true,
+        "arp": true,
+        "vocal": "phrase",
+        "fx": [
+          "impact_start"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "arp",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 700,
+            "to": 9000
+          }
+        ]
+      },
+      {
+        "name": "break",
+        "bars": 16,
+        "kick": false,
+        "drums": null,
+        "bass": null,
+        "pad": true,
+        "arp": true,
+        "vocal": "phrase",
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 4500,
+            "to": 1200,
+            "to_bar": 4
+          },
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 1200,
+            "to": 6000,
+            "from_bar": 8,
+            "to_bar": 16
+          }
+        ]
+      },
+      {
+        "name": "drop",
+        "bars": 16,
+        "kick": true,
+        "drums": 3,
+        "bass": "rolling",
+        "arp": true,
+        "lead": "vocal_melody",
+        "fx": [
+          "impact_start"
+        ]
+      }
     ]
   }
 }

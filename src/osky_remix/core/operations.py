@@ -17,7 +17,7 @@ from typing import Annotated, Literal, Union
 from pydantic import Field
 
 from .models import (Asset, AudioClip, AutomationLane, Id, Marker, MeterPointM, MidiClip, MidiNote,
-                     PluginSlot, Project, Strict, TempoPointM, Track, TrackKind)
+                     PluginSlot, Project, Send, Strict, TempoPointM, Track, TrackKind)
 
 Author = Literal["user", "claude"]
 
@@ -169,6 +169,40 @@ class UnlockTrack(Op):
 
     def apply(self, p):
         p.track(self.track).locked = False
+
+
+class AddSend(Op):
+    op: Literal["add_send"] = "add_send"
+    track: Id
+    send: Send
+
+    def touches(self, p):
+        return {self.track}
+
+    def check(self, p, ctx):
+        t = _track(p, self.track)
+        dst = _track(p, self.send.target)
+        _require(dst.kind in (TrackKind.ret, TrackKind.bus), "un envío va a una pista return o bus")
+        _require(all(s.target != self.send.target for s in t.sends), f"ya hay un envío de '{self.track}' a '{self.send.target}'")
+
+    def apply(self, p):
+        p.track(self.track).sends.append(self.send.model_copy())
+
+
+class RemoveSend(Op):
+    op: Literal["remove_send"] = "remove_send"
+    track: Id
+    target: Id
+
+    def touches(self, p):
+        return {self.track}
+
+    def check(self, p, ctx):
+        _require(any(s.target == self.target for s in _track(p, self.track).sends), "no existe ese envío")
+
+    def apply(self, p):
+        t = p.track(self.track)
+        t.sends = [s for s in t.sends if s.target != self.target]
 
 
 # ------------------------------------------------------------------ assets
@@ -443,6 +477,21 @@ class SetKey(Op):
         p.key = self.key
 
 
+class SetMasterProfile(Op):
+    op: Literal["set_master_profile"] = "set_master_profile"
+    profile: str = Field(pattern=r"^[a-z0-9_\-]{1,64}$")
+
+    def check(self, p, ctx):
+        from ..mastering.dynamics import load_profile
+        try:
+            load_profile(self.profile)
+        except ValueError as e:
+            raise OperationError(str(e)) from None
+
+    def apply(self, p):
+        p.master_profile = self.profile
+
+
 class AddMarker(Op):
     op: Literal["add_marker"] = "add_marker"
     marker: Marker
@@ -467,8 +516,8 @@ class RemoveMarker(Op):
 
 
 Operation = Annotated[
-    Union[AddTrack, RemoveTrack, SetTrack, LockTrack, UnlockTrack, RegisterAsset, AddClip, MoveClip,
+    Union[AddTrack, RemoveTrack, SetTrack, LockTrack, UnlockTrack, AddSend, RemoveSend, RegisterAsset, AddClip, MoveClip,
           DeleteClip, TransposeMidi, SetMidiNotes, AddPlugin, ReplacePlugin, RemovePlugin, SetPluginParam,
-          SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, AddMarker, RemoveMarker],
+          SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, SetMasterProfile, AddMarker, RemoveMarker],
     Field(discriminator="op"),
 ]

@@ -20,8 +20,12 @@ def _hp(x, f, sr, o=2):
     return sosfilt(butter(o, f, "high", fs=sr, output="sos"), x)
 
 
+DRUM_LEVEL = 0.5   # -6 dB: margen antes del fader (gain staging); se compensa con el fader
+FX_LEVEL = 0.5
+
+
 def drum_hit(pitch: int, vel: int, sr: int, start: int) -> np.ndarray:
-    g = vel / 127
+    g = vel / 127 * DRUM_LEVEL
     rng = _rng(pitch, start)
     if pitch == 36:                                                      # bombo
         n = int(0.45 * sr); t = np.arange(n) / sr
@@ -55,7 +59,7 @@ def drum_hit(pitch: int, vel: int, sr: int, start: int) -> np.ndarray:
 
 def fx_hit(pitch: int, dur_s: float, vel: int, sr: int, start: int) -> np.ndarray:
     """1 = riser (ruido con barrido ascendente), 2 = impacto, 3 = downlifter."""
-    g = vel / 127
+    g = vel / 127 * FX_LEVEL
     rng = _rng(pitch, start)
     if pitch in (1, 3):
         n = max(1, int(dur_s * sr)); x = rng.standard_normal(n); out = np.zeros(n); zi = None

@@ -719,6 +719,13 @@
       "default": null,
       "title": "Key"
     },
+    "master_profile": {
+      "default": "club",
+      "description": "perfil de mastering por defecto",
+      "pattern": "^[a-z0-9_\\-]{1,64}$",
+      "title": "Master Profile",
+      "type": "string"
+    },
     "tempo": {
       "items": {
         "$ref": "#/$defs/TempoPointM"

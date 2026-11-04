@@ -181,6 +181,47 @@ class MeterPointM(Strict):
     denominator: Literal[1, 2, 4, 8, 16, 32] = 4
 
 
+def routing_edges(tracks: list[Track]) -> dict[str, set[str]]:
+    """Dependencias de audio: pista -> pistas cuya salida necesita antes de procesarse."""
+    deps: dict[str, set[str]] = {t.id: set() for t in tracks}
+    for t in tracks:
+        if t.output and t.output in deps and t.kind != TrackKind.master:
+            deps[t.output].add(t.id)
+        for s in t.sends:
+            if s.target in deps:
+                deps[s.target].add(t.id)
+        if t.sidechain_from and t.sidechain_from in deps:
+            deps[t.id].add(t.sidechain_from)
+    return deps
+
+
+def routing_cycle(tracks: list[Track]) -> list[str] | None:
+    deps = routing_edges(tracks)
+    state: dict[str, int] = {}
+    stack: list[str] = []
+
+    def visit(n: str) -> list[str] | None:
+        state[n] = 1
+        stack.append(n)
+        for m in sorted(deps[n]):
+            if state.get(m) == 1:
+                return stack[stack.index(m):] + [m]
+            if m not in state:
+                c = visit(m)
+                if c:
+                    return c
+        state[n] = 2
+        stack.pop()
+        return None
+
+    for n in deps:
+        if n not in state:
+            c = visit(n)
+            if c:
+                return c
+    return None
+
+
 # ------------------------------------------------------------------ proyecto
 class Project(Strict):
     schema_version: Literal[1] = SCHEMA_VERSION
@@ -188,6 +229,7 @@ class Project(Strict):
     sample_rate: Literal[44100, 48000, 88200, 96000] = 48000
     ppq: Literal[960] = PPQ
     key: str | None = None
+    master_profile: str = Field("club", pattern=r"^[a-z0-9_\-]{1,64}$", description="perfil de mastering por defecto")
     tempo: list[TempoPointM] = Field(default_factory=lambda: [TempoPointM(tick=0, bpm=124.0)])
     meter: list[MeterPointM] = Field(default_factory=lambda: [MeterPointM(bar=0, numerator=4)])
     assets: dict[Sha256, Asset] = Field(default_factory=dict)
@@ -229,6 +271,9 @@ class Project(Strict):
         for lane in self.automation:
             if lane.track not in known:
                 raise ValueError(f"automatización {lane.id} sobre pista inexistente")
+        cycle = routing_cycle(self.tracks)
+        if cycle:
+            raise ValueError("ruteo circular: " + " -> ".join(cycle))
         if self.tempo[0].tick != 0 or self.meter[0].bar != 0:
             raise ValueError("tempo y compás deben definirse desde el inicio")
         return self

@@ -1,4 +1,4 @@
-# Motor de audio y producción (etapa 3)
+# Motor de audio, producción y mezcla (etapas 3 y 4)
 
 ```bash
 uv run osky-remix compose <proyecto> --analysis <sha> --vocals <sha-stem> --at 1:23.1 --bars 32 \
@@ -47,5 +47,28 @@ no vuelve a sintetizar (24 s → 12 s en el hito 1).
 un preset se mide su f0 con una nota de referencia y la transposición (múltiplo de 12) se
 compensa en el MIDI; se guarda en caché por SHA del preset.
 
-Pendiente para la etapa 4: automatización, grafo DSP explícito, retornos con efectos de usuario,
-comparación A/B, paquete reproducible de exportación.
+
+## Mezcla y render (etapa 4)
+
+```bash
+uv run osky-remix graph   <proyecto> [--rev X]                    # cadena, salidas, envíos, sidechain, orden
+uv run osky-remix render  <proyecto> [--rev X] [--profile P]       # por defecto, el perfil del proyecto
+uv run osky-remix compare <proyecto> <A> <B> [--profile P]         # A/B igualado + diff del proyecto
+uv run osky-remix export  <proyecto> <carpeta> [--rev X]           # paquete de entrega
+uv run osky-remix package verify <carpeta>
+```
+
+| Elemento | Detalle |
+|---|---|
+| Grafo DSP | `audio/graph.py`: orden topológico por salidas, envíos y sidechain. Un ruteo circular es inválido en el modelo, así que la operación que lo crearía se rechaza. |
+| Envíos | `add_send` / `remove_send`; pre-fader (tras efectos, antes de ganancia/paneo) o post-fader. |
+| Automatización | `gain_db`, `pan`, `<plugin>.<parámetro>` de efectos integrados (por bloques de 512 muestras, el estado del plugin se conserva) y de Surge XT (parámetro por nombre). Curvas `linear` o `hold`. Un destino no automatizable produce un aviso y se aplica el valor fijo. |
+| Filtros | `LadderFilter` de 24 dB/oct con resonancia (los filtros simples de pedalboard son de 6 dB/oct). |
+| Estéreo | efecto `stereo`: ancho por M/S y graves en mono. |
+| Gain staging | aviso si una pista supera 0 dBFS antes del fader; los instrumentos integrados dejan 6 dB de margen. |
+| Mastering | perfiles en `presets/mastering/*.json` o integrados: bloqueo de DC, pico de entrada, graves en mono, tilt, glue, objetivo LUFS y techo de true peak. Campo `master_profile` del proyecto (`set_master_profile`). |
+| Calidad | `mastering/quality.py`: true peak, LUFS, recortes, NaN, DC, compatibilidad mono, silencio inicial, LRA; estado PASS/WARN/FAIL. |
+| A/B | `mastering/compare.py`: B igualado a la sonoridad de A; bandas, cresta, estéreo, null test, por sección (marcadores) y `core/diff.py`. |
+| Entrega | master 24 bits, premaster float, stems alineados, MIDI (PPQ 960, mapa de tempo), presets, `plugins.json`, calidad, proyecto + assets y `manifest.json` con SHA-256. |
+
+Esquemas: `schemas/render.schema.json` describe el reporte de render.

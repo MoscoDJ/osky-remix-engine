@@ -9,8 +9,8 @@ Cada etapa entrega una demostración funcional, pruebas automatizadas y document
 | 1 | Núcleo y CLI: proyectos, assets SHA-256, esquemas Pydantic, revisiones, operaciones atómicas, caché | **Completa** (2026-11-03) |
 | 2 | Análisis y separación: BPM, compás, tonalidad, estructura, stems, transcripción, reportes con confianza | **Completa** (2026-11-04) |
 | 3 | Producción musical: MIDI, síntesis (Surge XT), arreglos, voces, plantillas de género | **Completa** (2026-11-04), hito 1 cumplido |
-| 4 | Mezcla y render: grafo DSP, buses, sidechain, mastering por perfiles, exportación | Siguiente (renderizador básico ya disponible) |
-| 5 | Automatización con Claude: planificador, acciones, evaluador, variaciones, revisiones | |
+| 4 | Mezcla y render: grafo DSP, buses, sidechain, mastering por perfiles, exportación | **Completa** (2026-11-04) |
+| 5 | Automatización con Claude: planificador, acciones, evaluador, variaciones, revisiones | Siguiente |
 | 6 | Interfaz híbrida: timeline, mezclador, editor MIDI, A/B, control manual | |
 
 ## Hitos musicales

@@ -123,7 +123,7 @@ def compose(name: str,
 
 def render(name: str, rev: Optional[str] = typer.Option(None, "--rev"),
            out: Optional[Path] = typer.Option(None, "--out", help="carpeta de salida"),
-           profile: str = typer.Option("club", "--profile"),
+           profile: Optional[str] = typer.Option(None, "--profile", help="por defecto, el del proyecto"),
            stems: bool = typer.Option(True, "--stems/--no-stems"),
            as_json: bool = typer.Option(False, "--json")):
     """Renderiza la revisión: premaster float, master WAV 24 bits, stems y reporte."""
@@ -137,6 +137,7 @@ def render(name: str, rev: Optional[str] = typer.Option(None, "--rev"),
         _fail(str(e))
     out = out or workspace() / "renders" / name / rid[:12]
     console.print(f"Renderizando {name}@{rid[:12]}…")
+    profile = profile or p.master_profile
     r = Renderer(p, repo.assets, repo.cache).render(out, profile, stems)
     data = {"revision": rid, **r.__dict__}
     if as_json:
@@ -148,3 +149,94 @@ def render(name: str, rev: Optional[str] = typer.Option(None, "--rev"),
         console.print(f"  {t:8s} pico {m['peak_dbfs']:7.2f} dBFS  rms {m['rms_dbfs']:7.2f} dBFS")
     for w in r.warnings:
         console.print(f"[yellow]aviso:[/] {w}")
+
+
+def graph(name: str, rev: Optional[str] = typer.Option(None, "--rev")):
+    """Muestra el grafo DSP (cadena de plugins, salidas, envíos, sidechain) y el orden de proceso."""
+    from ..audio.graph import build_graph, describe
+    repo = _repo(name)
+    p = repo.load(rev)
+    for line in describe(p):
+        console.print(line)
+    console.print("[dim]Orden: " + " → ".join(build_graph(p).order) + "[/]")
+
+
+def _render_cached(repo, name: str, rev: str, profile: str):
+    """Render de una revisión, reutilizado si ya existe con el mismo perfil."""
+    from ..audio.renderer import RENDER_VERSION, Renderer
+    from ..core.config import workspace
+    rid = repo.resolve(rev)
+    out = workspace() / "renders" / name / f"{rid[:12]}-{Path(profile).stem}-{RENDER_VERSION}"
+    rep_f = out / "mix_report.json"
+    if rep_f.exists():
+        return rid, json.loads(rep_f.read_text()), out
+    r = Renderer(repo.load(rid), repo.assets, repo.cache).render(out, profile, stems=False)
+    return rid, r.__dict__, out
+
+
+def compare(name: str, a: str, b: str, profile: str = typer.Option("club", "--profile", help="mismo perfil para A y B"),
+            out: Optional[Path] = typer.Option(None, "--out"), as_json: bool = typer.Option(False, "--json")):
+    """A/B entre dos revisiones (o ramas): igualado en sonoridad, por banda y sección, con diff del proyecto."""
+    from ..core.config import workspace
+    from ..core.diff import diff_projects
+    from ..mastering.compare import compare as cmp
+    from ..mastering.compare import report_markdown
+    repo = _repo(name)
+    try:
+        ra, rep_a, da = _render_cached(repo, name, a, profile)
+        rb, rep_b, db = _render_cached(repo, name, b, profile)
+    except RepoError as e:
+        _fail(str(e))
+    xa, sr = sf.read(rep_a["files"]["master"], dtype="float32", always_2d=True)
+    xb, _ = sf.read(rep_b["files"]["master"], dtype="float32", always_2d=True)
+    pa = repo.load(ra)
+    tm = pa.tempo_map()
+    ms = sorted(pa.markers, key=lambda m: m.tick)
+    secs = [(m.label, tm.tick_to_sample(m.tick),
+             tm.tick_to_sample(ms[i + 1].tick) if i + 1 < len(ms) else len(xa)) for i, m in enumerate(ms)]
+    rep, xb_matched = cmp(xa, xb, sr, secs)
+    diff = diff_projects(pa, repo.load(rb))
+    out = out or workspace() / "compare" / name / f"{ra[:8]}_vs_{rb[:8]}"
+    out.mkdir(parents=True, exist_ok=True)
+    sf.write(out / "A.wav", xa, sr, subtype="PCM_24")
+    sf.write(out / "B_igualado.wav", xb_matched, sr, subtype="FLOAT")
+    md = report_markdown(rep, diff, f"{a} ({ra[:8]})", f"{b} ({rb[:8]})")
+    (out / "ab.md").write_text(md)
+    if as_json:
+        print(json.dumps({**rep, "diff": diff, "dir": str(out)}, ensure_ascii=False))
+    else:
+        console.print(md)
+        console.print(f"[dim]{out}[/]")
+
+
+def export(name: str, out: Path = typer.Argument(..., help="carpeta de salida (vacía o inexistente)"),
+           rev: Optional[str] = typer.Option(None, "--rev"), profile: Optional[str] = typer.Option(None, "--profile"),
+           as_json: bool = typer.Option(False, "--json")):
+    """Paquete de entrega: master, premaster, stems, MIDI, presets, manifiesto, calidad y proyecto."""
+    from ..audio.export import export_package
+    repo = _repo(name)
+    try:
+        rid = repo.resolve(rev) if rev else repo.head()
+        p = repo.load(rid)
+        res = export_package(p, repo.assets, repo.cache, out, profile or p.master_profile, rid)
+    except (RepoError, FileExistsError) as e:
+        _fail(str(e))
+    q = res["report"].quality
+    _out(as_json, {"dir": str(out), "files": res["files"], "quality": q["status"], "midi_notes": res["midi_notes"]},
+         f"Paquete en {out}: {res['files']} archivos · calidad [bold]{q['status']}[/] · {q['lufs']} LUFS, "
+         f"{q['true_peak_dbtp']} dBTP")
+
+
+package_app = typer.Typer(help="Paquetes de entrega", no_args_is_help=True)
+
+
+@package_app.command("verify")
+def package_verify(root: Path):
+    """Verifica hashes, assets del proyecto y alineación de stems de un paquete."""
+    from ..audio.export import verify_package
+    probs = verify_package(root)
+    if probs:
+        for x in probs:
+            console.print(f"[red]✗[/] {x}")
+        raise typer.Exit(1)
+    console.print("[green]Paquete íntegro[/]")

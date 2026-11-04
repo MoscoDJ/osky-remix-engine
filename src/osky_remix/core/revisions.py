@@ -146,10 +146,11 @@ class ProjectRepo:
             if rev is None:
                 rev = s.get(BranchRow, self._meta(s, "current_branch")).head
             row = self._row(s, rev)
-            p = Project.model_validate_json(row.snapshot)
-            if p.content_hash() != row.content_hash:
+            # se verifica el snapshot tal como se guardó (no su re-serialización): así se detecta
+            # cualquier alteración y se toleran campos nuevos con valor por defecto (migración aditiva)
+            if hashlib.sha256(row.snapshot.encode()).hexdigest() != row.content_hash:
                 raise RepoError(f"la revisión {row.id[:12]} está corrupta (hash no coincide)")
-            return p
+            return Project.model_validate_json(row.snapshot)
 
     def log(self, branch: str | None = None, limit: int = 50) -> list[Revision]:
         out = []

@@ -235,9 +235,11 @@ def asset_verify(name: str):
 # ------------------------------------------------------------------ esquemas
 @schema_app.command("export")
 def schema_export(out_dir: Path = typer.Option(REPO_ROOT / "schemas")):
-    """Escribe project.schema.json y operation.schema.json."""
+    """Escribe project.schema.json, operation.schema.json y render.schema.json."""
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "project.schema.json").write_text(json.dumps(Project.model_json_schema(), indent=2, ensure_ascii=False))
     (out_dir / "operation.schema.json").write_text(
         json.dumps(TypeAdapter(list[Operation]).json_schema(), indent=2, ensure_ascii=False))
+    from ..audio.renderer import RenderReport
+    (out_dir / "render.schema.json").write_text(json.dumps(TypeAdapter(RenderReport).json_schema(), indent=2, ensure_ascii=False))
     console.print(f"Esquemas escritos en {out_dir}")

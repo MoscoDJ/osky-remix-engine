@@ -30,14 +30,15 @@ Los segundos nunca se guardan como posición. `tick_to_sample` redondea una sola
 - **AutomationLane**: `target` = `gain_db`, `pan` o `<plugin>.<parámetro>`; puntos ordenados.
 
 La validación de integridad rechaza: ids duplicados, referencias a pistas/assets inexistentes,
-clips en pistas del tipo equivocado, clips más largos que su asset, notas fuera del clip.
+clips en pistas del tipo equivocado, clips más largos que su asset, notas fuera del clip y
+ruteos circulares (salidas, envíos y sidechain).
 
 ## Operaciones (`core/operations.py`)
 
-`add_track`, `remove_track`, `set_track`, `lock_track`, `unlock_track`, `register_asset`,
+`add_track`, `remove_track`, `set_track`, `lock_track`, `unlock_track`, `add_send`, `remove_send`, `register_asset`,
 `add_clip`, `move_clip`, `delete_clip`, `transpose_midi`, `set_midi_notes`, `add_plugin`,
 `replace_plugin`, `remove_plugin`, `set_plugin_param`, `set_automation`, `delete_automation`,
-`set_tempo`, `set_meter`, `set_key`, `add_marker`, `remove_marker`.
+`set_tempo`, `set_meter`, `set_key`, `set_master_profile`, `add_marker`, `remove_marker`.
 
 Cada una: **precondiciones** → aplicar sobre copia → **revalidación completa** →
 **postcondiciones**. Un lote (`osky-remix op apply`) es atómico: si falla la operación *n*, se
@@ -69,3 +70,9 @@ workspace/projects/<nombre>/
   assets/      <sha[:2]>/<sha>.<ext>, solo lectura
   cache/       resultados derivados por clave de contenido (tarea, versión, entradas, parámetros)
 ```
+
+### Migraciones
+
+La integridad de una revisión se verifica hasheando el snapshot tal como se guardó, no su
+re-serialización: así los campos nuevos con valor por defecto (p. ej. `master_profile`) no invalidan
+revisiones anteriores.

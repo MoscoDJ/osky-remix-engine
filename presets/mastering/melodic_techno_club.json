@@ -1,0 +1,11 @@
+{
+  "name": "melodic_techno_club",
+  "target_lufs": -8.5,
+  "ceiling_dbtp": -1.0,
+  "input_peak_dbfs": -6.0,
+  "low_mono_hz": 120,
+  "tilt_db": 0.5,
+  "glue_threshold_db": -14.0,
+  "glue_ratio": 2.0,
+  "release_ms": 50
+}

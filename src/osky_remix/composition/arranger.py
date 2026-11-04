@@ -124,20 +124,76 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
             else:
                 inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "synth"}
             ops.append({"op": "add_plugin", "track": t, "plugin": inst})
+    mix = tpl.get("mix", {})
+    # buses y retornos que alguna pista usa
+    groups = {**{k: ("bus", v) for k, v in tpl.get("buses", {}).items()},
+              **{k: ("return", v) for k, v in tpl.get("returns", {}).items()}}
+    needed = []
+    for t in tracks:
+        m = mix.get(t, {})
+        for g in [m.get("output")] + [snd["target"] for snd in m.get("sends", [])]:
+            if g in groups and g not in needed:
+                needed.append(g)
+    for g in needed:
+        kind, spec = groups[g]
+        ops.append({"op": "add_track", "id": g, "name": g.capitalize(), "kind": kind})
+        for i, fx in enumerate(spec.get("fx", [])):
+            ops.append({"op": "add_plugin", "track": g, "plugin": {"id": f"{g}-{fx['uri']}-{i}", "backend": "builtin",
+                                                                  "uri": fx["uri"], "params": fx.get("params", {})}})
+        if spec.get("gain_db") is not None:
+            ops.append({"op": "set_track", "track": g, "gain_db": spec["gain_db"]})
+    fx_ids: dict[tuple[str, str], str] = {}
     for t in tracks:                                     # mezcla (después: sidechain necesita la fuente)
-        m = tpl.get("mix", {}).get(t, {})
+        m = mix.get(t, {})
         upd = {k: m[k] for k in ("gain_db", "pan") if k in m}
         if m.get("sidechain_from") in tracks:
             upd["sidechain_from"] = m["sidechain_from"]
+        if m.get("output") in needed:
+            upd["output"] = m["output"]
         if upd:
             ops.append({"op": "set_track", "track": t, **upd})
+        for snd in m.get("sends", []):
+            if snd["target"] in needed:
+                ops.append({"op": "add_send", "track": t, "send": {"target": snd["target"], "level_db": snd.get("level_db", 0.0),
+                                                                    "pre_fader": snd.get("pre_fader", False)}})
         for i, fx in enumerate(m.get("fx", [])):
             if fx["uri"] == "sidechain" and "sidechain_from" not in upd:
                 continue
+            pid = f"{t}-{fx['uri']}-{i}"
+            fx_ids.setdefault((t, fx["uri"]), pid)
             ops.append({"op": "add_plugin", "track": t,
-                        "plugin": {"id": f"{t}-{fx['uri']}-{i}", "backend": "builtin", "uri": fx["uri"], "params": fx.get("params", {})}})
+                        "plugin": {"id": pid, "backend": "builtin", "uri": fx["uri"], "params": fx.get("params", {})}})
+    for i, fx in enumerate(tpl.get("master", {}).get("fx", [])):
+        ops.append({"op": "add_plugin", "track": "master", "plugin": {"id": f"master-{fx['uri']}-{i}", "backend": "builtin",
+                                                                       "uri": fx["uri"], "params": fx.get("params", {})}})
+    if tpl.get("master_profile"):
+        ops.append({"op": "set_master_profile", "profile": tpl["master_profile"]})
     for tr, c in clips:
         ops.append({"op": "add_clip", "track": tr, "clip": c})
+    # automatización declarada por sección: un carril por destino con todos sus puntos
+    lanes: dict[tuple[str, str], list[dict]] = {}
+    tick = 0
+    for s in secs:
+        for a in s.get("automation", []):
+            if a["track"] not in tracks:
+                continue
+            if "target" in a:
+                target = a["target"]
+            else:
+                pid = fx_ids.get((a["track"], a["fx"]))
+                if pid is None:
+                    raise ValueError(f"automatización: la pista '{a['track']}' no tiene el efecto '{a['fx']}'")
+                target = f"{pid}.{a['param']}"
+            t1 = tick + a.get("from_bar", 0) * BAR
+            t2 = tick + a.get("to_bar", s["bars"]) * BAR
+            lanes.setdefault((a["track"], target), []).extend([
+                {"tick": t1, "value": a["from"], "curve": a.get("curve", "linear")},
+                {"tick": t2, "value": a["to"], "curve": a.get("curve", "linear")}])
+        tick += s["bars"] * BAR
+    for (tr, target), pts in lanes.items():
+        pts.sort(key=lambda p: p["tick"])
+        lid = f"{prefix}auto-{tr}-{target.replace('.', '-')}"[:64]
+        ops.append({"op": "set_automation", "lane": {"id": lid, "track": tr, "target": target, "points": pts}})
     tick = 0
     for s in secs:
         ops.append({"op": "add_marker", "marker": {"id": f"{prefix}m-{s['name']}", "tick": tick, "label": s["name"]}})

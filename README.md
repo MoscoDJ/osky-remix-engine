@@ -3,7 +3,7 @@
 Motor de producción de remixes headless, modular, no destructivo y reproducible, operado por
 Claude desde una CLI, con interfaz web local para supervisión (etapa 6).
 
-Estado: **etapas 0 a 3 completas**; hito 1 (32 compases de melodic techno con voz extraída) cumplido. Ver `docs/ROADMAP.md`.
+Estado: **etapas 0 a 4 completas**; hito 1 (32 compases de melodic techno con voz extraída) cumplido. Ver `docs/ROADMAP.md`.
 
 ## Requisitos del sistema (Ubuntu / Kubuntu)
 
@@ -50,6 +50,14 @@ Métodos, confianza y verificación en `docs/ANALYSIS.md`.
 uv run osky-remix project branch mi-remix idea --from main
 uv run osky-remix compose mi-remix --analysis <sha> --vocals <sha-voz> --at 1:23.1 --bars 32 --branch idea
 uv run osky-remix render mi-remix --rev idea
+```
+
+Mezcla, A/B y entrega:
+
+```bash
+uv run osky-remix graph mi-remix --rev idea
+uv run osky-remix compare mi-remix main idea
+uv run osky-remix export mi-remix entrega/ --rev idea && uv run osky-remix package verify entrega/
 ```
 
 Ver `docs/AUDIO_ENGINE.md`.

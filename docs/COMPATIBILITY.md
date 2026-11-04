@@ -66,3 +66,10 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
     solo 5 son deterministas (Rubber Bass, Saw Lo-Fi, Fundament, Delay Dancer, Lo-Fi Pluck); el
     resto difiere muestra a muestra → el renderizador congela cada pista en caché. 16 de 26
     suenan una octava abajo de la nota MIDI → calibración automática por preset.
+13. **pedalboard `HighpassFilter`/`LowpassFilter`** son de un polo (6 dB/oct): cerrado a 300 Hz el
+    centroide de ruido blanco seguía en 4.5 kHz. Se usa `LadderFilter` (12/24 dB/oct).
+14. **Limitador v1**: el min-filter con ventana = release retenía la ganancia ±50 ms alrededor de
+    cada pico; con bombos cada 0.48 s la sonoridad se estancaba (-9.8 LUFS por más ganancia que se
+    diera). v2: lookahead de 5 ms + release exponencial por bloques, misma garantía de techo.
+15. **Compatibilidad mono**: medirla contra un canal (L+R)/2 da siempre -3 dB; se compara contra la
+    mezcla mono duplicada en ambos canales.

@@ -17,3 +17,9 @@ def test_project_schema_is_current():
 def test_operation_schema_is_current():
     on_disk = json.loads((REPO_ROOT / "schemas" / "operation.schema.json").read_text())
     assert on_disk == json.loads(json.dumps(TypeAdapter(list[Operation]).json_schema()))
+
+
+def test_render_schema_is_current():
+    from osky_remix.audio.renderer import RenderReport
+    on_disk = json.loads((REPO_ROOT / "schemas" / "render.schema.json").read_text())
+    assert on_disk == json.loads(json.dumps(TypeAdapter(RenderReport).json_schema()))

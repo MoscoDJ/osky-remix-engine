@@ -1,13 +1,15 @@
-"""Renderizador básico (etapa 3): proyecto -> premaster float, master WAV 24 bits y stems.
+"""Renderizador: proyecto -> premaster float, master WAV 24 bits, stems y reporte de calidad.
 
-- Pistas de audio: clips desde assets (offset/longitud en muestras, ganancia, fades).
-- Pistas de instrumento: el primer plugin es el instrumento (Surge XT o integrado);
-  los demás son efectos integrados.
-- Enrutado: salidas a buses/master, envíos a retornos, sidechain desde otra pista.
-- Congelado: cada render de Surge se guarda en la caché por clave de contenido (notas,
-  preset, parámetros, sr); con patches estocásticos re-renderizar da el mismo audio.
-- Calibración: la transposición propia de cada preset se mide y se compensa en el MIDI.
-La etapa 4 amplía esto (automatización, grafo DSP completo, A/B, exportación de paquete).
+Procesa el grafo DSP en orden topológico (``audio.graph``):
+  pista = clips de audio + instrumento (Surge XT o integrado)
+        + entradas (pistas que salen a ella, envíos pre/post-fader)
+        -> efectos (con automatización por bloques) -> [pre-fader]
+        -> ganancia y paneo (automatizables) -> [post-fader] -> salida
+El master pasa por un perfil de mastering (gain staging, mono en graves, tilt, glue, limitador).
+
+Congelado: cada render de Surge se guarda en la caché por clave de contenido (notas, preset,
+parámetros, automatización, sr); con patches estocásticos re-renderizar da el mismo audio.
+Calibración: la transposición propia de cada preset se mide y se compensa en el MIDI.
 """
 from __future__ import annotations
 
@@ -25,13 +27,15 @@ from scipy.signal import resample_poly
 from ..core.assets import AssetStore
 from ..core.cache import CacheStore, cache_key
 from ..core.models import AudioClip, MidiClip, PluginSlot, Project, Track, TrackKind
-from ..mastering.dynamics import PROFILES, master
+from ..mastering.dynamics import MasterProfile, load_profile, master
 from ..mastering.loudness import integrated_lufs
-from ..mastering.true_peak import true_peak_dbtp
+from ..mastering.quality import quality_report
 from . import synth
-from .effects import EFFECTS, apply_effect, pan_gain
+from .automation import curve, lanes_for
+from .effects import EFFECTS, apply_effect, pan_gain_curve
+from .graph import build_graph, describe
 
-RENDER_VERSION = "1.0.0"
+RENDER_VERSION = "2.1.0"
 INSTRUMENTS_BUILTIN = {"drums", "fx", "synth"}
 TAIL_S = 4.0
 
@@ -40,11 +44,15 @@ TAIL_S = 4.0
 class RenderReport:
     sample_rate: int
     length_samples: int
-    lufs: float
-    true_peak_dbtp: float
-    premaster_lufs: float
+    lufs: float = 0.0
+    true_peak_dbtp: float = 0.0
+    premaster_lufs: float = 0.0
+    profile: dict = field(default_factory=dict)
+    mastering_log: list[str] = field(default_factory=list)
+    graph: list[str] = field(default_factory=list)
     tracks: dict[str, dict] = field(default_factory=dict)
     frozen: dict[str, str] = field(default_factory=dict)
+    quality: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     files: dict[str, str] = field(default_factory=dict)
 
@@ -57,12 +65,12 @@ class Renderer:
         self.sr = project.sample_rate
         self.tm = project.tempo_map()
         self.bpm = project.tempo[0].bpm
-        self.report = RenderReport(self.sr, 0, 0, 0, 0)
+        self.graph = build_graph(project)
         self.n = self._length()
-        self.report.length_samples = self.n
-        self._out: dict[str, np.ndarray] = {}
-        self._dry: dict[str, np.ndarray] = {}
-        self._busy: set[str] = set()
+        self.report = RenderReport(self.sr, self.n, graph=describe(project))
+        self.pre: dict[str, np.ndarray] = {}
+        self.post: dict[str, np.ndarray] = {}
+        self.dry: dict[str, np.ndarray] = {}
 
     # ---------------------------------------------------------------- utilidades
     def _length(self) -> int:
@@ -87,7 +95,6 @@ class Renderer:
         return x[:, :2]
 
     def _notes_abs(self, t: Track) -> list[tuple[int, int, int, int]]:
-        """(muestra_inicio, muestra_fin, pitch, vel) de todos los clips MIDI de la pista."""
         out = []
         for c in t.clips:
             if isinstance(c, MidiClip):
@@ -106,8 +113,7 @@ class Renderer:
             elif uri == "fx":
                 h = synth.fx_hit(p, (b - a) / self.sr, v, self.sr, a)
             else:
-                f = 440 * 2 ** ((p - 69) / 12)
-                h = synth.subtractive(f, (b - a) / self.sr, v, self.sr, params.get("bright", 0.5))
+                h = synth.subtractive(440 * 2 ** ((p - 69) / 12), (b - a) / self.sr, v, self.sr, params.get("bright", 0.5))
             k = min(len(h), self.n - a)
             if k > 0:
                 y[a:a + k] += h[:k]
@@ -122,13 +128,12 @@ class Renderer:
         return p
 
     def _calibrate(self, slot: PluginSlot) -> int:
-        """Semitonos que el preset transpone por diseño (múltiplo de 12), medido y cacheado."""
         from ..doctor.fixtures import f0_median
-        key = cache_key("surge_calibrate", RENDER_VERSION, [slot.preset or "default"], {})
+        key = cache_key("surge_calibrate", "1", [slot.preset or "default"], {})
         c = self.cache.get_json(key)
         if c is not None:
             return int(c["semitones"])
-        y = self._surge_raw(slot, [(0, int(1.0 * self.sr), 60, 100)], int(1.5 * self.sr), {})
+        y = self._surge_raw(slot, [(0, int(1.0 * self.sr), 60, 100)], int(1.5 * self.sr), {}, {})
         f0 = f0_median(y[: self.sr], self.sr, 25, 2500)
         semis = int(12 * round(np.log2(f0 / 261.6256))) if np.isfinite(f0) else 0
         if np.isfinite(f0) and abs(12 * np.log2(f0 / 261.6256) - semis) > 0.5:
@@ -137,24 +142,28 @@ class Renderer:
         self.cache.put_json(key, {"semitones": semis, "f0": float(f0) if np.isfinite(f0) else None})
         return semis
 
-    def _surge_raw(self, slot: PluginSlot, notes, n: int, params: dict) -> np.ndarray:
+    def _surge_raw(self, slot: PluginSlot, notes, n: int, params: dict, autom: dict[str, np.ndarray]) -> np.ndarray:
         import dawdreamer as daw
-        from .plugin_host import PREROLL_S, SURGE_XT_VST3, fxp_to_state_file, set_static_params
+        from .plugin_host import PREROLL_S, SURGE_XT_VST3, find_param, fxp_to_state_file, set_static_params
         eng = daw.RenderEngine(self.sr, 512)
         s = eng.make_plugin_processor("inst", str(SURGE_XT_VST3))
         pre = self._preset_path(slot)
         if pre is not None:
             with tempfile.TemporaryDirectory() as td:
-                st = fxp_to_state_file(pre, Path(td) / "p.state")
-                s.load_state(str(st))
+                s.load_state(str(fxp_to_state_file(pre, Path(td) / "p.state")))
         total = PREROLL_S + n / self.sr
-        if params:
-            set_static_params(s, params, total, self.sr)
+        static = {k: v for k, v in params.items() if k not in autom}
+        if static:
+            set_static_params(s, static, total, self.sr)
+        pre_n = int(PREROLL_S * self.sr)
+        for name, arr in autom.items():
+            full = np.concatenate([np.full(pre_n, arr[0]), arr]).astype(np.float32)
+            s.set_automation(find_param(s, name), full)
         for a, b, p, v in notes:
             s.add_midi_note(int(p), int(v), PREROLL_S + a / self.sr, max(0.01, (b - a) / self.sr))
         eng.load_graph([(s, [])])
         eng.render(total)
-        y = eng.get_audio().T[int(PREROLL_S * self.sr):]
+        y = eng.get_audio().T[pre_n:]
         out = np.zeros((n, 2), np.float32)
         out[: min(n, len(y))] = y[:n, :2]
         return out
@@ -162,13 +171,16 @@ class Renderer:
     def _render_surge(self, t: Track, slot: PluginSlot, notes) -> np.ndarray:
         semis = self._calibrate(slot)
         notes = [(a, b, p - semis, v) for a, b, p, v in notes if 0 <= p - semis <= 127]
-        payload = {"notes": notes, "params": slot.params, "n": self.n, "sr": self.sr}
+        lanes = {tgt.split(".", 1)[1]: ln for tgt, ln in lanes_for(self.p, t.id).items() if tgt.startswith(slot.id + ".")}
+        autom = {k: curve(ln, self.tm, self.n) for k, ln in lanes.items()}
+        payload = {"notes": notes, "params": slot.params, "n": self.n, "sr": self.sr,
+                   "automation": {k: ln.model_dump(mode="json") for k, ln in lanes.items()}}
         key = cache_key("surge_track", RENDER_VERSION, [slot.preset or "default"], payload)
         hit = self.cache.get(key)
         if hit:
             y, _ = sf.read(str(hit / "audio.wav"), dtype="float32", always_2d=True)
         else:
-            y = self._surge_raw(slot, notes, self.n, slot.params)
+            y = self._surge_raw(slot, notes, self.n, slot.params, autom)
             with tempfile.TemporaryDirectory() as td:
                 f = Path(td) / "audio.wav"
                 sf.write(f, y, self.sr, subtype="FLOAT")
@@ -178,13 +190,13 @@ class Renderer:
 
     # ---------------------------------------------------------------- pistas
     def _own(self, t: Track) -> np.ndarray:
-        """Audio propio de la pista (clips), antes de efectos."""
         y = np.zeros((self.n, 2), np.float32)
         for c in t.clips:
             if isinstance(c, AudioClip):
                 src = self._asset_audio(c.asset)[c.source_offset:c.source_offset + c.source_length].copy()
                 if c.fade_in:
-                    src[: c.fade_in] *= np.linspace(0, 1, min(c.fade_in, len(src)))[:, None]
+                    k = min(c.fade_in, len(src))
+                    src[:k] *= np.linspace(0, 1, k)[:, None]
                 if c.fade_out:
                     k = min(c.fade_out, len(src))
                     src[len(src) - k:] *= np.linspace(1, 0, k)[:, None]
@@ -207,74 +219,89 @@ class Renderer:
         chain = t.plugins[1:] if t.kind == TrackKind.instrument else t.plugins
         return [s for s in chain if not s.bypass]
 
-    def output(self, tid: str) -> np.ndarray:
-        """Salida post-fader de una pista (memoizada)."""
-        if tid in self._out:
-            return self._out[tid]
-        if tid in self._busy:
-            raise ValueError(f"ciclo de enrutado en '{tid}'")
-        self._busy.add(tid)
-        t = self.p.track(tid)
+    def _process(self, t: Track) -> None:
         x = self._own(t)
-        for o in self.p.tracks:                                   # entradas desde otras pistas
-            if o.id != tid and o.output == tid and o.kind != TrackKind.master:
-                x = x + self.output(o.id)
+        for o in self.p.tracks:
+            if o.id == t.id:
+                continue
+            if o.output == t.id and o.kind != TrackKind.master:
+                x = x + self.post[o.id]
             for s in o.sends:
-                if s.target == tid:
-                    x = x + self.output(o.id) * np.float32(10 ** (s.level_db / 20))
-        self._dry[tid] = x
+                if s.target == t.id:
+                    src = self.pre[o.id] if s.pre_fader else self.post[o.id]
+                    x = x + src * np.float32(10 ** (s.level_db / 20))
+        self.dry[t.id] = x
+        lanes = lanes_for(self.p, t.id)
         for slot in self._effects(t):
             if slot.backend != "builtin" or slot.uri not in EFFECTS:
-                self.report.warnings.append(f"{tid}: efecto {slot.backend}/{slot.uri} no soportado, omitido")
+                self.report.warnings.append(f"{t.id}: efecto {slot.backend}/{slot.uri} no soportado, omitido")
                 continue
-            sc = self._dry_of(t.sidechain_from) if slot.uri == "sidechain" else None
-            x = apply_effect(slot.uri, slot.params, x, self.sr, self.bpm, sc).astype(np.float32)
+            autom = {tgt.split(".", 1)[1]: curve(ln, self.tm, self.n) for tgt, ln in lanes.items()
+                     if tgt.startswith(slot.id + ".")}
+            sc = self.dry.get(t.sidechain_from) if slot.uri == "sidechain" else None
+            try:
+                x = apply_effect(slot.uri, slot.params, x, self.sr, self.bpm, sc, autom).astype(np.float32)
+            except ValueError as e:
+                self.report.warnings.append(f"{t.id}: {e}; se aplica sin automatización")
+                x = apply_effect(slot.uri, slot.params, x, self.sr, self.bpm, sc).astype(np.float32)
+        self.pre[t.id] = x
         if t.mute:
             x = np.zeros_like(x)
-        gl, gr = pan_gain(t.pan)
-        g = 10 ** (t.gain_db / 20)
-        x = x * np.array([g * gl, g * gr], np.float32)
+        g_db = curve(lanes["gain_db"], self.tm, self.n) if "gain_db" in lanes else np.full(self.n, t.gain_db)
+        pan = curve(lanes["pan"], self.tm, self.n) if "pan" in lanes else np.full(self.n, t.pan)
+        gl, gr = pan_gain_curve(pan)
+        g = 10 ** (g_db / 20)
+        x = (x * np.stack([g * gl, g * gr], 1)).astype(np.float32)
         if not np.isfinite(x).all():
-            raise ValueError(f"la pista '{tid}' produjo NaN/Inf")
-        self._busy.discard(tid)
-        self._out[tid] = x
+            raise ValueError(f"la pista '{t.id}' produjo NaN/Inf")
+        self.post[t.id] = x
         if t.kind != TrackKind.master:
             pk = float(np.abs(x).max())
-            self.report.tracks[tid] = {"peak_dbfs": round(20 * np.log10(pk + 1e-12), 2),
-                                       "rms_dbfs": round(20 * np.log10(np.sqrt(np.mean(x ** 2)) + 1e-12), 2)}
+            pre_pk = float(np.abs(self.pre[t.id]).max())
+            self.report.tracks[t.id] = {"peak_dbfs": round(20 * np.log10(pk + 1e-12), 2),
+                                        "rms_dbfs": round(20 * np.log10(np.sqrt(np.mean(x ** 2)) + 1e-12), 2),
+                                        "pre_fader_peak_dbfs": round(20 * np.log10(pre_pk + 1e-12), 2)}
             if pk < 1e-5 and (t.clips or t.kind in (TrackKind.bus, TrackKind.ret)):
-                self.report.warnings.append(f"la pista '{tid}' quedó en silencio")
-        return x
+                self.report.warnings.append(f"la pista '{t.id}' quedó en silencio")
+            if pre_pk > 1.0:
+                self.report.warnings.append(f"la pista '{t.id}' supera 0 dBFS antes del fader "
+                                            f"({20 * np.log10(pre_pk):+.1f} dB): revisar gain staging")
 
-    def _dry_of(self, tid: str | None) -> np.ndarray | None:
-        if tid is None:
-            return None
-        self.output(tid)
-        return self._dry[tid]
+    def output(self, tid: str) -> np.ndarray:
+        if tid not in self.post:
+            for x in self.graph.order:
+                if x not in self.post:
+                    self._process(self.p.track(x))
+                if x == tid:
+                    break
+        return self.post[tid]
 
     # ---------------------------------------------------------------- render completo
-    def render(self, out_dir: Path, profile: str = "club", stems: bool = True, name: str = "mix") -> RenderReport:
+    def render(self, out_dir: Path, profile: str | MasterProfile = "club", stems: bool = True,
+               name: str = "mix") -> RenderReport:
+        prof = profile if isinstance(profile, MasterProfile) else load_profile(profile)
         out_dir.mkdir(parents=True, exist_ok=True)
-        master_id = next(t.id for t in self.p.tracks if t.kind == TrackKind.master)
-        pre = self.output(master_id)
+        pre = self.output(self.graph.master)
         self.report.premaster_lufs = round(integrated_lufs(pre, self.sr), 2)
         files = {}
         f_pre = out_dir / f"{name}_premaster.wav"
         sf.write(f_pre, pre, self.sr, subtype="FLOAT")
         files["premaster"] = str(f_pre)
-        res = master(pre, self.sr, PROFILES[profile])
+        res = master(pre, self.sr, prof)
         f_m = out_dir / f"{name}_master.wav"
         sf.write(f_m, res.audio, self.sr, subtype="PCM_24")
         files["master"] = str(f_m)
         self.report.lufs = round(res.lufs, 2)
         self.report.true_peak_dbtp = round(res.true_peak_dbtp, 2)
+        self.report.profile = res.profile
+        self.report.mastering_log = res.log
+        self.report.quality = quality_report(res.audio, self.sr, prof.ceiling_dbtp, prof.target_lufs, pre)
         if stems:
             sd = out_dir / f"{name}_stems"
             sd.mkdir(exist_ok=True)
             for t in self.p.tracks:
-                if t.kind != TrackKind.master and t.id in self._out:
-                    f = sd / f"{t.id}.wav"
-                    sf.write(f, self._out[t.id], self.sr, subtype="FLOAT")
+                if t.kind != TrackKind.master and t.id in self.post:
+                    sf.write(sd / f"{t.id}.wav", self.post[t.id], self.sr, subtype="FLOAT")
             files["stems"] = str(sd)
         self.report.files = files
         (out_dir / f"{name}_report.json").write_text(json.dumps(self.report.__dict__, indent=2, ensure_ascii=False))
