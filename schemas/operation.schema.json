@@ -1,0 +1,1336 @@
+{
+  "$defs": {
+    "AddClip": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_clip",
+          "default": "add_clip",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "clip": {
+          "discriminator": {
+            "mapping": {
+              "audio": "#/$defs/AudioClip",
+              "midi": "#/$defs/MidiClip"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AudioClip"
+            },
+            {
+              "$ref": "#/$defs/MidiClip"
+            }
+          ],
+          "title": "Clip"
+        }
+      },
+      "required": [
+        "track",
+        "clip"
+      ],
+      "title": "AddClip",
+      "type": "object"
+    },
+    "AddMarker": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_marker",
+          "default": "add_marker",
+          "title": "Op",
+          "type": "string"
+        },
+        "marker": {
+          "$ref": "#/$defs/Marker"
+        }
+      },
+      "required": [
+        "marker"
+      ],
+      "title": "AddMarker",
+      "type": "object"
+    },
+    "AddPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_plugin",
+          "default": "add_plugin",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "plugin": {
+          "$ref": "#/$defs/PluginSlot"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        }
+      },
+      "required": [
+        "track",
+        "plugin"
+      ],
+      "title": "AddPlugin",
+      "type": "object"
+    },
+    "AddTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "add_track",
+          "default": "add_track",
+          "title": "Op",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "audio",
+            "instrument",
+            "bus",
+            "return"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "master",
+          "title": "Output"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind"
+      ],
+      "title": "AddTrack",
+      "type": "object"
+    },
+    "Asset": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AssetKind"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ext": {
+          "pattern": "^\\.[a-z0-9]{1,8}$",
+          "title": "Ext",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        },
+        "channels": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "frames": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frames"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        }
+      },
+      "required": [
+        "sha256",
+        "kind",
+        "name",
+        "ext",
+        "size_bytes",
+        "provenance"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "AssetKind": {
+      "enum": [
+        "original",
+        "stem",
+        "sample",
+        "render",
+        "midi",
+        "preset",
+        "plugin_state",
+        "analysis"
+      ],
+      "title": "AssetKind",
+      "type": "string"
+    },
+    "AudioClip": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "audio",
+          "default": "audio",
+          "title": "Type",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "asset": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Asset",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "source_offset": {
+          "default": 0,
+          "description": "muestra de inicio dentro del asset",
+          "minimum": 0,
+          "title": "Source Offset",
+          "type": "integer"
+        },
+        "source_length": {
+          "description": "muestras del asset que suenan",
+          "exclusiveMinimum": 0,
+          "title": "Source Length",
+          "type": "integer"
+        },
+        "gain_db": {
+          "default": 0.0,
+          "title": "Gain Db",
+          "type": "number"
+        },
+        "fade_in": {
+          "default": 0,
+          "description": "muestras",
+          "minimum": 0,
+          "title": "Fade In",
+          "type": "integer"
+        },
+        "fade_out": {
+          "default": 0,
+          "description": "muestras",
+          "minimum": 0,
+          "title": "Fade Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "asset",
+        "start_tick",
+        "source_length"
+      ],
+      "title": "AudioClip",
+      "type": "object"
+    },
+    "AutomationLane": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "target": {
+          "description": "'gain_db', 'pan' o '<plugin_id>.<parámetro>'",
+          "title": "Target",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/AutomationPoint"
+          },
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "track",
+        "target",
+        "points"
+      ],
+      "title": "AutomationLane",
+      "type": "object"
+    },
+    "AutomationPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "tick": {
+          "minimum": 0,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "curve": {
+          "default": "linear",
+          "enum": [
+            "linear",
+            "hold"
+          ],
+          "title": "Curve",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tick",
+        "value"
+      ],
+      "title": "AutomationPoint",
+      "type": "object"
+    },
+    "DeleteAutomation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "delete_automation",
+          "default": "delete_automation",
+          "title": "Op",
+          "type": "string"
+        },
+        "lane": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Lane",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lane"
+      ],
+      "title": "DeleteAutomation",
+      "type": "object"
+    },
+    "DeleteClip": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "delete_clip",
+          "default": "delete_clip",
+          "title": "Op",
+          "type": "string"
+        },
+        "clip": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Clip",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip"
+      ],
+      "title": "DeleteClip",
+      "type": "object"
+    },
+    "LockTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "lock_track",
+          "default": "lock_track",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track"
+      ],
+      "title": "LockTrack",
+      "type": "object"
+    },
+    "Marker": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "tick": {
+          "minimum": 0,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "default": "section",
+          "enum": [
+            "section",
+            "cue",
+            "note"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tick",
+        "label"
+      ],
+      "title": "Marker",
+      "type": "object"
+    },
+    "MeterPointM": {
+      "additionalProperties": false,
+      "properties": {
+        "bar": {
+          "minimum": 0,
+          "title": "Bar",
+          "type": "integer"
+        },
+        "numerator": {
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Numerator",
+          "type": "integer"
+        },
+        "denominator": {
+          "default": 4,
+          "enum": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+          ],
+          "title": "Denominator",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bar",
+        "numerator"
+      ],
+      "title": "MeterPointM",
+      "type": "object"
+    },
+    "MidiClip": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "midi",
+          "default": "midi",
+          "title": "Type",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "length_ticks": {
+          "exclusiveMinimum": 0,
+          "title": "Length Ticks",
+          "type": "integer"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/MidiNote"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "start_tick",
+        "length_ticks"
+      ],
+      "title": "MidiClip",
+      "type": "object"
+    },
+    "MidiNote": {
+      "additionalProperties": false,
+      "properties": {
+        "tick": {
+          "minimum": 0,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "duration": {
+          "exclusiveMinimum": 0,
+          "title": "Duration",
+          "type": "integer"
+        },
+        "pitch": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Pitch",
+          "type": "integer"
+        },
+        "velocity": {
+          "maximum": 127,
+          "minimum": 1,
+          "title": "Velocity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tick",
+        "duration",
+        "pitch",
+        "velocity"
+      ],
+      "title": "MidiNote",
+      "type": "object"
+    },
+    "MoveClip": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "move_clip",
+          "default": "move_clip",
+          "title": "Op",
+          "type": "string"
+        },
+        "clip": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Clip",
+          "type": "string"
+        },
+        "start_tick": {
+          "minimum": 0,
+          "title": "Start Tick",
+          "type": "integer"
+        },
+        "to_track": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Track"
+        }
+      },
+      "required": [
+        "clip",
+        "start_tick"
+      ],
+      "title": "MoveClip",
+      "type": "object"
+    },
+    "PluginSlot": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "backend": {
+          "enum": [
+            "surge_xt",
+            "vst3",
+            "builtin",
+            "faust"
+          ],
+          "title": "Backend",
+          "type": "string"
+        },
+        "uri": {
+          "description": "ruta del plugin, nombre builtin o código faust",
+          "title": "Uri",
+          "type": "string"
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "bypass": {
+          "default": false,
+          "title": "Bypass",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "backend",
+        "uri"
+      ],
+      "title": "PluginSlot",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "De dónde salió un asset: herramienta, versión, parámetros, semilla y padres.",
+      "properties": {
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Version"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "parents": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Parents",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RegisterAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "register_asset",
+          "default": "register_asset",
+          "title": "Op",
+          "type": "string"
+        },
+        "asset": {
+          "$ref": "#/$defs/Asset"
+        }
+      },
+      "required": [
+        "asset"
+      ],
+      "title": "RegisterAsset",
+      "type": "object"
+    },
+    "RemoveMarker": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "remove_marker",
+          "default": "remove_marker",
+          "title": "Op",
+          "type": "string"
+        },
+        "marker": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Marker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "marker"
+      ],
+      "title": "RemoveMarker",
+      "type": "object"
+    },
+    "RemovePlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "remove_plugin",
+          "default": "remove_plugin",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "plugin_id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Plugin Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track",
+        "plugin_id"
+      ],
+      "title": "RemovePlugin",
+      "type": "object"
+    },
+    "RemoveTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "remove_track",
+          "default": "remove_track",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track"
+      ],
+      "title": "RemoveTrack",
+      "type": "object"
+    },
+    "ReplacePlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "replace_plugin",
+          "default": "replace_plugin",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "plugin_id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Plugin Id",
+          "type": "string"
+        },
+        "plugin": {
+          "$ref": "#/$defs/PluginSlot"
+        }
+      },
+      "required": [
+        "track",
+        "plugin_id",
+        "plugin"
+      ],
+      "title": "ReplacePlugin",
+      "type": "object"
+    },
+    "SetAutomation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_automation",
+          "default": "set_automation",
+          "title": "Op",
+          "type": "string"
+        },
+        "lane": {
+          "$ref": "#/$defs/AutomationLane"
+        }
+      },
+      "required": [
+        "lane"
+      ],
+      "title": "SetAutomation",
+      "type": "object"
+    },
+    "SetKey": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_key",
+          "default": "set_key",
+          "title": "Op",
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[A-G](#|b)?(m| minor| major)?$",
+          "title": "Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SetKey",
+      "type": "object"
+    },
+    "SetMeter": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_meter",
+          "default": "set_meter",
+          "title": "Op",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/MeterPointM"
+          },
+          "minItems": 1,
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "SetMeter",
+      "type": "object"
+    },
+    "SetMidiNotes": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_midi_notes",
+          "default": "set_midi_notes",
+          "title": "Op",
+          "type": "string"
+        },
+        "clip": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Clip",
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/MidiNote"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "length_ticks": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length Ticks"
+        }
+      },
+      "required": [
+        "clip",
+        "notes"
+      ],
+      "title": "SetMidiNotes",
+      "type": "object"
+    },
+    "SetPluginParam": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_plugin_param",
+          "default": "set_plugin_param",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "plugin_id": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Plugin Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "track",
+        "plugin_id",
+        "param",
+        "value"
+      ],
+      "title": "SetPluginParam",
+      "type": "object"
+    },
+    "SetTempo": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_tempo",
+          "default": "set_tempo",
+          "title": "Op",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/TempoPointM"
+          },
+          "minItems": 1,
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "SetTempo",
+      "type": "object"
+    },
+    "SetTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_track",
+          "default": "set_track",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "gain_db": {
+          "anyOf": [
+            {
+              "maximum": 24,
+              "minimum": -96,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gain Db"
+        },
+        "pan": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pan"
+        },
+        "mute": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mute"
+        },
+        "solo": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Solo"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "sidechain_from": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sidechain From"
+        }
+      },
+      "required": [
+        "track"
+      ],
+      "title": "SetTrack",
+      "type": "object"
+    },
+    "TempoPointM": {
+      "additionalProperties": false,
+      "properties": {
+        "tick": {
+          "minimum": 0,
+          "title": "Tick",
+          "type": "integer"
+        },
+        "bpm": {
+          "exclusiveMaximum": 400,
+          "exclusiveMinimum": 20,
+          "title": "Bpm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "tick",
+        "bpm"
+      ],
+      "title": "TempoPointM",
+      "type": "object"
+    },
+    "TransposeMidi": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "transpose_midi",
+          "default": "transpose_midi",
+          "title": "Op",
+          "type": "string"
+        },
+        "clip": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Clip",
+          "type": "string"
+        },
+        "semitones": {
+          "maximum": 48,
+          "minimum": -48,
+          "title": "Semitones",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "clip",
+        "semitones"
+      ],
+      "title": "TransposeMidi",
+      "type": "object"
+    },
+    "UnlockTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "unlock_track",
+          "default": "unlock_track",
+          "title": "Op",
+          "type": "string"
+        },
+        "track": {
+          "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+          "title": "Track",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track"
+      ],
+      "title": "UnlockTrack",
+      "type": "object"
+    }
+  },
+  "items": {
+    "discriminator": {
+      "mapping": {
+        "add_clip": "#/$defs/AddClip",
+        "add_marker": "#/$defs/AddMarker",
+        "add_plugin": "#/$defs/AddPlugin",
+        "add_track": "#/$defs/AddTrack",
+        "delete_automation": "#/$defs/DeleteAutomation",
+        "delete_clip": "#/$defs/DeleteClip",
+        "lock_track": "#/$defs/LockTrack",
+        "move_clip": "#/$defs/MoveClip",
+        "register_asset": "#/$defs/RegisterAsset",
+        "remove_marker": "#/$defs/RemoveMarker",
+        "remove_plugin": "#/$defs/RemovePlugin",
+        "remove_track": "#/$defs/RemoveTrack",
+        "replace_plugin": "#/$defs/ReplacePlugin",
+        "set_automation": "#/$defs/SetAutomation",
+        "set_key": "#/$defs/SetKey",
+        "set_meter": "#/$defs/SetMeter",
+        "set_midi_notes": "#/$defs/SetMidiNotes",
+        "set_plugin_param": "#/$defs/SetPluginParam",
+        "set_tempo": "#/$defs/SetTempo",
+        "set_track": "#/$defs/SetTrack",
+        "transpose_midi": "#/$defs/TransposeMidi",
+        "unlock_track": "#/$defs/UnlockTrack"
+      },
+      "propertyName": "op"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/AddTrack"
+      },
+      {
+        "$ref": "#/$defs/RemoveTrack"
+      },
+      {
+        "$ref": "#/$defs/SetTrack"
+      },
+      {
+        "$ref": "#/$defs/LockTrack"
+      },
+      {
+        "$ref": "#/$defs/UnlockTrack"
+      },
+      {
+        "$ref": "#/$defs/RegisterAsset"
+      },
+      {
+        "$ref": "#/$defs/AddClip"
+      },
+      {
+        "$ref": "#/$defs/MoveClip"
+      },
+      {
+        "$ref": "#/$defs/DeleteClip"
+      },
+      {
+        "$ref": "#/$defs/TransposeMidi"
+      },
+      {
+        "$ref": "#/$defs/SetMidiNotes"
+      },
+      {
+        "$ref": "#/$defs/AddPlugin"
+      },
+      {
+        "$ref": "#/$defs/ReplacePlugin"
+      },
+      {
+        "$ref": "#/$defs/RemovePlugin"
+      },
+      {
+        "$ref": "#/$defs/SetPluginParam"
+      },
+      {
+        "$ref": "#/$defs/SetAutomation"
+      },
+      {
+        "$ref": "#/$defs/DeleteAutomation"
+      },
+      {
+        "$ref": "#/$defs/SetTempo"
+      },
+      {
+        "$ref": "#/$defs/SetMeter"
+      },
+      {
+        "$ref": "#/$defs/SetKey"
+      },
+      {
+        "$ref": "#/$defs/AddMarker"
+      },
+      {
+        "$ref": "#/$defs/RemoveMarker"
+      }
+    ]
+  },
+  "type": "array"
+}

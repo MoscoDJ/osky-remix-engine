@@ -26,6 +26,7 @@ dependencies = [
     "setuptools<81",        # basic-pitch/resampy importan pkg_resources (eliminado en setuptools 81)
     # Host de plugins (candidato, sujeto a doctor)
     "dawdreamer>=0.8.3",
+    "sqlalchemy>=2.0",
 ]
 
 [project.scripts]
