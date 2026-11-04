@@ -4,7 +4,8 @@ Mide sobre el master final (lo que se escucha) y sobre las salidas post-fader de
 - contraste de energía entre secciones según su nivel declarado (intro < voz < drop),
 - presencia de la voz frente al resto en secciones con voz,
 - balance bajo/bombo en la sección de mayor energía,
-- verificaciones de calidad del master (true peak, recortes, sonoridad).
+- verificaciones de calidad del master (true peak, recortes, sonoridad),
+- enmascaramiento por sección y banda, y diferencias con una referencia (``mix_findings``).
 """
 from __future__ import annotations
 
@@ -133,6 +134,12 @@ def evaluate(p: Project, renderer, master_audio: np.ndarray, quality: dict, poli
             findings.append(Finding("bass_balance", 0.3 * (lo - r if r < lo else r - hi),
                                     f"bajo {r:+.1f} LU frente al bombo en '{top['name']}' (se busca {lo:+.0f}..{hi:+.0f})",
                                     {"rel": r, "target": (lo + hi) / 2, "window": (lo, hi)}))
+    # 3b) enmascaramiento por sección y banda, y 3c) referencia comercial (si meta.reference_track)
+    from .mix_findings import masking_findings, reference_findings
+    whole = secs or [{"name": "todo", "start": 0, "end": len(master_audio), "vocal": True}]
+    for fs, ms in (masking_findings(p, post, whole, sr, policy), reference_findings(p, renderer, master_audio, policy)):
+        findings += fs
+        metrics.update(ms)
     # 4) calidad del master
     for c in quality.get("checks", []):
         if c["status"] == "FAIL":

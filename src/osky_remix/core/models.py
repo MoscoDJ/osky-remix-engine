@@ -38,6 +38,7 @@ class AssetKind(str, Enum):
     preset = "preset"
     plugin_state = "plugin_state"
     analysis = "analysis"
+    reference = "reference"     # pista comercial de referencia (comparación de mezcla)
 
 
 class Provenance(Strict):

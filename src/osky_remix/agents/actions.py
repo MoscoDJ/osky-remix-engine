@@ -111,4 +111,6 @@ def plan_actions(p: Project, ev: Evaluation, policy: Policy = DEFAULT) -> tuple[
         a = track_gain_action(p, ev, policy, code, track)
         if a:
             acts.append(a)
-    return acts, blocked
+    from .mix_actions import mix_actions          # enmascaramiento y referencia (EQ / ducking)
+    more, why = mix_actions(p, ev, policy)
+    return acts + more, blocked + why

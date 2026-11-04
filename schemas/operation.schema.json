@@ -269,7 +269,8 @@
         "midi",
         "preset",
         "plugin_state",
-        "analysis"
+        "analysis",
+        "reference"
       ],
       "title": "AssetKind",
       "type": "string"
