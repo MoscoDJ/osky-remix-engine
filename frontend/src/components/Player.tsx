@@ -35,8 +35,10 @@ export function useWave(url: string | null, prj: Project | null, height = 90) {
   return { ref, ws, ready, t };
 }
 
-export default function Player({ url, prj, info }: { url: string | null; prj: Project | null; info?: string }) {
+export default function Player({ url, prj, info, onTime }: { url: string | null; prj: Project | null; info?: string;
+                                                         onTime?: (t: number) => void }) {
   const { ref, ws, ready, t } = useWave(url, prj);
+  useEffect(() => { onTime?.(t); }, [t, onTime]);
   return (
     <div className="player">
       <div className="toolbar">

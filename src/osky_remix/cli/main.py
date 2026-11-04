@@ -6,6 +6,7 @@ from .dawproject import dawproject_cmd
 from .dj import cues_cmd, extend_cmd
 from .doctor import doctor
 from .match import match_cmd
+from .listening import listening_cmd
 from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
 from .vocals import transpose
@@ -31,6 +32,7 @@ app.command("vary")(vary_cmd)
 app.command("match")(match_cmd)
 app.command("extend")(extend_cmd)
 app.command("cues")(cues_cmd)
+app.command("listening")(listening_cmd)
 app.add_typer(project_app, name="project")
 app.add_typer(op_app, name="op")
 app.add_typer(asset_app, name="asset")

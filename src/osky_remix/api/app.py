@@ -2,7 +2,7 @@
 
 - Mismo contrato que la CLI: toda modificación es un lote de operaciones atómico.
 - En la interfaz el autor es ``user`` (control manual): puede bloquear y desbloquear pistas.
-- Trabajos pesados (render, compare, evaluate) van a una cola SQLite con un worker local.
+- Trabajos pesados (render, compare, evaluate, visualize, blind) van a una cola SQLite con un worker local.
 - Eventos en ``/ws``: revisiones nuevas y estado de trabajos.
 Solo debe escuchar en 127.0.0.1.
 """
@@ -57,6 +57,15 @@ class JobIn(BaseModel):
     a: str | None = None
     b: str | None = None
     profile: str | None = None
+    seed: int | None = None                  # blind: semilla del orden X/Y (por defecto, aleatoria)
+
+
+class VerdictIn(BaseModel):
+    session: str
+    preferred: str                           # x | y | none
+    rating_x: int
+    rating_y: int
+    note: str = ""
 
 
 class Hub:
@@ -100,7 +109,7 @@ def job_render(project: str, params: dict) -> dict:
     return {"revision": rid, "profile": rep["profile"], "mastering_status": rep["mastering_status"],
             "mastering_converged": rep["mastering_converged"], "master_url": _rel_url(out / "mix_master.wav"),
             "lufs": rep["lufs"], "true_peak_dbtp": rep["true_peak_dbtp"], "quality": rep["quality"],
-            "warnings": rep["warnings"]}
+            "warnings": rep["warnings"], "cache_key": rep.get("cache_key")}
 
 
 def job_compare(project: str, params: dict) -> dict:
@@ -137,11 +146,78 @@ def job_evaluate(project: str, params: dict) -> dict:
             "findings": [{"code": f.code, "severity": f.severity, "detail": f.detail} for f in ev.findings]}
 
 
+def _sections(p, length: int) -> list[tuple[str, int, int]]:
+    tm = p.tempo_map()
+    ms = sorted(p.markers, key=lambda m: m.tick)
+    return [(m.label, tm.tick_to_sample(m.tick), tm.tick_to_sample(ms[i + 1].tick) if i + 1 < len(ms) else length)
+            for i, m in enumerate(ms)]
+
+
+def job_visualize(project: str, params: dict) -> dict:
+    """Espectrograma, LUFS-S y correlación del master renderizado (caché por clave de render)."""
+    from ..analysis.visualize import VIS_VERSION, visualize
+    repo = _repo(project)
+    r = job_render(project, params)
+    key = cache_key("visualize", VIS_VERSION, [r["cache_key"]])
+    data = repo.cache.get_json(key)
+    if data is None:
+        x, sr = sf.read(str(workspace().resolve() / r["master_url"][len("/files/"):]), dtype="float32", always_2d=True)
+        target = params.get("resolved_profile", {}).get("target_lufs")
+        data = visualize(x, sr, _sections(repo.load(r["revision"]), len(x)), target)
+        repo.cache.put_json(key, data)
+    return {**data, "revision": r["revision"], "profile": r["profile"], "render_key": r["cache_key"]}
+
+
+def _score_cached(project: str, params: dict, render_key: str) -> float:
+    """Puntaje del evaluador para una revisión/perfil, en caché por la clave de su render."""
+    repo = _repo(project)
+    key = cache_key("evaluate-score", "1", [render_key])
+    hit = repo.cache.get_json(key)
+    if hit is None:
+        ev = job_evaluate(project, params)
+        hit = {"score": ev["score"], "findings": ev["findings"]}
+        repo.cache.put_json(key, hit)
+    return hit["score"]
+
+
+def job_blind(project: str, params: dict) -> dict:
+    """Escucha ciega: compara (B igualado en sonoridad), sortea X/Y y crea la sesión.
+
+    El resultado solo expone X e Y: los archivos se copian como ``X.wav``/``Y.wav`` para que ni la
+    ruta ni el nombre revelen cuál es cuál. La identidad se revela al guardar el veredicto.
+    """
+    import secrets
+    from ..storage.listening import ListeningStore
+    repo = _repo(project)
+    cmp = job_compare(project, params)
+    ra, rb = cmp["a"], cmp["b"]
+    sa = _score_cached(project, {**params, "rev": ra["revision"]}, ra["cache_key"])
+    sb = _score_cached(project, {**params, "rev": rb["revision"]}, rb["cache_key"])
+    seed = int(params["seed"]) if params.get("seed") is not None else secrets.randbits(32)
+    prof = params.get("resolved_profile", {}).get("name") or str(ra["profile"])
+    store = ListeningStore.for_project(repo.root)
+    sess = store.create_session(rev_a=ra["revision"], rev_b=rb["revision"], label_a=params.get("a_label") or ra["revision"],
+                                label_b=params.get("b_label") or rb["revision"], profile=prof,
+                                render_key_a=ra["cache_key"], render_key_b=rb["cache_key"], score_a=sa, score_b=sb,
+                                b_gain_db=cmp["report"].get("b_gain_to_match_db"), seed=seed)
+    root = workspace().resolve()
+    xa, sr = sf.read(str(root / cmp["a_url"][len("/files/"):]), dtype="float32", always_2d=True)
+    xb, _ = sf.read(str(root / cmp["b_url"][len("/files/"):]), dtype="float32", always_2d=True)
+    x, y = (xa, xb) if sess["order"] == "ab" else (xb, xa)
+    out = workspace() / "listening" / project / sess["session"]
+    out.mkdir(parents=True, exist_ok=True)
+    sf.write(out / "X.wav", x, sr, subtype="FLOAT")
+    sf.write(out / "Y.wav", y, sr, subtype="FLOAT")
+    return {"session": sess["session"], "x_url": _rel_url(out / "X.wav"), "y_url": _rel_url(out / "Y.wav"),
+            "profile": prof}
+
+
 # ------------------------------------------------------------------ app
 def create_app() -> FastAPI:
     from contextlib import asynccontextmanager
     hub = Hub()
-    queue = JobQueue(workspace() / "jobs.db", {"render": job_render, "compare": job_compare, "evaluate": job_evaluate},
+    queue = JobQueue(workspace() / "jobs.db", {"render": job_render, "compare": job_compare, "evaluate": job_evaluate,
+                                                 "visualize": job_visualize, "blind": job_blind},
                      hub.publish)
 
     @asynccontextmanager
@@ -275,13 +351,14 @@ def create_app() -> FastAPI:
     @app.post("/api/projects/{name}/jobs")
     def submit(name: str, body: JobIn):
         repo = _repo(name)
-        if body.kind == "compare" and not (body.a and body.b):
-            raise HTTPException(400, "compare necesita 'a' y 'b'")
+        if body.kind in ("compare", "blind") and not (body.a and body.b):
+            raise HTTPException(400, f"{body.kind} necesita 'a' y 'b'")
         try:
             from dataclasses import asdict
             from ..mastering.dynamics import load_profile
             params = body.model_dump(exclude_none=True)
-            if body.kind == "compare":
+            if body.kind in ("compare", "blind"):
+                params["a_label"], params["b_label"] = body.a, body.b
                 params["a"], params["b"] = repo.resolve(body.a), repo.resolve(body.b)
                 prof = body.profile or "club"
             else:
@@ -292,6 +369,24 @@ def create_app() -> FastAPI:
         except (ValueError, RepoError) as e:
             raise HTTPException(400, str(e)) from None
         return {"job": jid}
+
+    @app.get("/api/projects/{name}/listening")
+    def listening(name: str):
+        from ..storage.listening import ListeningStore, summarize
+        store = ListeningStore.for_project(_repo(name).root)
+        vs = store.verdicts()
+        return {"verdicts": vs, "summary": summarize(vs)}
+
+    @app.post("/api/projects/{name}/listening")
+    def listening_verdict(name: str, body: VerdictIn):
+        from ..storage.listening import ListeningError, ListeningStore
+        store = ListeningStore.for_project(_repo(name).root)
+        try:
+            v = store.record(body.session, body.preferred, body.rating_x, body.rating_y, body.note)
+        except ListeningError as e:
+            raise HTTPException(400, str(e)) from None
+        hub.publish({"type": "listening", "project": name, "verdict": v["id"]})
+        return v
 
     @app.post("/api/jobs/{jid}/cancel")
     def cancel_job(jid: str):
