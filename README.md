@@ -87,6 +87,7 @@ uv run osky-remix gc --older-than 30 --apply    # borra; --cache incluye la cach
 uv run osky-remix evaluate mi-remix --rev idea
 uv run osky-remix improve mi-remix --branch idea
 uv run osky-remix vary mi-remix --from idea --variants A,B,C
+uv run osky-remix match mi-remix --rev idea --reference ref.wav [--set] [--json]   # vs. referencia comercial
 ```
 
 `vary` solo regenera contenido generado sin editar. Los proyectos creados antes del registro

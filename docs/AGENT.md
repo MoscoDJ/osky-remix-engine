@@ -4,6 +4,7 @@
 uv run osky-remix evaluate <proyecto> [--rev X]                 # mide y lista hallazgos
 uv run osky-remix improve  <proyecto> --branch B [--max-iter 4]  # bucle del agente
 uv run osky-remix vary     <proyecto> --from REV [--variants A,B,C]
+uv run osky-remix match    <proyecto> [--rev X] --reference ref.wav [--set] [--json]
 ```
 
 ## Evaluador (`agents/evaluator.py`)
@@ -15,6 +16,11 @@ uv run osky-remix vary     <proyecto> --from REV [--variants A,B,C]
 | `energy_contrast` | LUFS del master por sección (marcadores) contra la de mayor energía | ≥ 1.5 LU por nivel de energía (intro 1, voz 2, drop 3) |
 | `vocal_level` | voz − resto en 300 Hz–5 kHz, secciones con voz | −4 … +3 LU |
 | `bass_balance` | bajo − bombo en la sección de mayor energía | −6 … 0 LU |
+| `masking` | enmascarador − objetivo en una banda de octava, mediana sobre los cuadros activos del objetivo, por sección (voz vs pad/lead/arp/chops; bajo → bombo) | ≤ −3 dB (`masking_threshold_db`); severidad 0.1/dB |
+| `reference_tonal` | Δ tonal referencia − mezcla por banda de octava, alineado por la mediana (solo con `meta.reference_track`) | ±2 dB |
+| `reference_width` | Δ lado/centro por banda | ±4 dB |
+| `reference_dynamics` | Δ LRA / Δ PLR (true peak − LUFS) | ±3 LU / ±2.5 dB |
+| `reference_punch` | Δ pico/RMS de la envolvente de 10 ms en 40–120 Hz | ±3 dB |
 | `quality_*` | verificaciones FAIL del reporte de calidad | ninguna |
 
 Puntaje = suma de severidades (0 = sin hallazgos). La energía de cada sección viene de
@@ -30,7 +36,58 @@ sonoridad pero no la tapan); por eso se mide en la banda donde compiten.
   en la escalera de perfiles (`melodic_techno_club` → `melodic_techno_dynamic` → `streaming`).
   Cambia volumen por dinámica; se puede desactivar (`allow_loudness_tradeoff`).
 - `vocal_level` / `bass_balance`: ganancia de la pista, máx. 4 dB por iteración.
-- **Nunca** sobre pistas bloqueadas: el hallazgo se reporta como "requiere al usuario".
+- `masking` (voz): campana del EQ integrado (`eq`, Q √2) en el enmascarador, en el centro de la
+  banda en conflicto (slot `auto-unmask-<banda>`); máx. 3 dB por iteración y 9 dB acumulados.
+  Hasta 2 bandas por iteración, la peor primero.
+- `masking` (bajo → bombo): más sidechain del bajo desde el bombo (efecto `sidechain` +
+  `sidechain_from`; crea `auto-duck` si no había), +0.15 por iteración hasta 0.85; agotado, EQ.
+- `reference_tonal`: campana en el master antes del mastering (slot `auto-ref-eq-<banda>`), máx.
+  3 dB por iteración y ±6 dB acumulados, hasta 2 bandas por iteración. `reference_width`,
+  `reference_dynamics` y `reference_punch` solo se informan (no hay acción automática).
+- **Nunca** sobre pistas bloqueadas: el hallazgo se reporta como "requiere al usuario" (también
+  cuando un recorte o EQ llegó a su límite).
+
+## Comparar con una referencia (`analysis/reference_match.py`, `match`)
+
+`match` renderiza la revisión con la caché de renders (`render_cached`), importa la referencia
+(cualquier formato y frecuencia de muestreo; se remuestrea a la del proyecto) al almacén como asset
+`reference` y compara el master con ella. Con `--set` la registra en el proyecto (asset +
+`meta.reference_track = {sha256, name}`) y desde entonces `evaluate`/`improve` añaden los
+hallazgos `reference_*`. El reporte se guarda junto al render (`match_<sha>.json`).
+
+Métricas (todas independientes del nivel; además la referencia se iguala a la sonoridad de la
+mezcla, `ref_gain_to_match_db`):
+
+- **Balance tonal**: espectro promedio a largo plazo (Welch, Hann 8192) integrado en 10 bandas de
+  octava ISO (31.5 Hz … 16 kHz, bordes fc/√2 … fc·√2). Δ = referencia − mezcla, menos la mediana de
+  los Δ: igualar por LUFS desplazaría todas las bandas cuando difiere una sola (la ponderación K
+  pesa más los agudos). Positivo = a la mezcla le falta ("faltan ~3 dB entre 5.7–11.3 kHz").
+  También por sección (marcadores) contra la referencia completa, solo informativo.
+- **Estéreo por banda**: lado/centro (M=(L+R)/2, S=(L−R)/2) y correlación L/R en la banda (parte
+  real del espectro cruzado sobre √(P_LL·P_RR)).
+- **Dinámica**: LRA (aprox. EBU), cresta (pico de muestra / RMS) y PLR (true peak − LUFS).
+- **Pegada en graves** (40–120 Hz): percentil 99 de la envolvente RMS de 10 ms menos el RMS de la
+  banda, y ataques por segundo (subida ≥ 6 dB en ≤ 30 ms).
+
+Verificado con ruido de espectro exacto: rosa y −3 dB/oct dan la energía analítica por banda con
+error < 0.5 dB; una referencia a 44.1 kHz con +6 dB en la octava de 8 kHz da un único hallazgo
+(+6.0 dB en esa banda, el resto < 0.5 dB); mono → correlación 1, canales independientes → 0,
+L=n₁, R=0.6n₁+0.8n₂ → 0.6 y lado/centro −6 dB.
+
+Limitaciones: la referencia se compara entera (no por secciones propias); el EQ correctivo es una
+campana estática (el `eq` integrado no es automatizable), por eso un recorte contra el
+enmascaramiento afecta a todas las secciones aunque el conflicto esté en una sola.
+
+## Enmascaramiento (`analysis/masking.py`)
+
+Por par (objetivo, enmascarador), sección y banda de octava, con las salidas post-fader: energía
+por cuadro (STFT 4096/2048); la banda cuenta si el objetivo tiene allí contenido (percentil 95 a
+≤ 20 dB de su banda más fuerte); cuadros activos = a ≤ 15 dB de ese percentil 95 (los golpes del
+bombo, las frases de la voz); `masking_db` = mediana de (enmascarador − objetivo) en esos cuadros.
+Los pares de voz solo se miden en secciones con voz. `metrics.masking` lista todos los conflictos,
+incluido bombo → bajo (solo informativo). Verificado: un pad de 1 kHz sobre una "voz" de
+300 Hz–3 kHz se marca solo en la octava de 1 kHz (+8.9 dB) y un recorte de 3 dB lo baja
+exactamente 3 dB; un lead en 8 kHz no se marca.
 
 ## Planificador (`agents/planner.py`)
 
