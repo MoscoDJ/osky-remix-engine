@@ -12,7 +12,7 @@ Política de pistas bloqueadas: ninguna operación puede tocar una pista con ``l
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import Field
 
@@ -477,6 +477,19 @@ class SetKey(Op):
         p.key = self.key
 
 
+class SetMeta(Op):
+    op: Literal["set_meta"] = "set_meta"
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    value: Any
+
+    def check(self, p, ctx):
+        import json
+        _require(len(json.dumps(self.value, default=str)) <= 65536, "valor de meta demasiado grande (máx. 64 KB)")
+
+    def apply(self, p):
+        p.meta[self.key] = self.value
+
+
 class SetMasterProfile(Op):
     op: Literal["set_master_profile"] = "set_master_profile"
     profile: str = Field(pattern=r"^[a-z0-9_\-]{1,64}$")
@@ -518,6 +531,6 @@ class RemoveMarker(Op):
 Operation = Annotated[
     Union[AddTrack, RemoveTrack, SetTrack, LockTrack, UnlockTrack, AddSend, RemoveSend, RegisterAsset, AddClip, MoveClip,
           DeleteClip, TransposeMidi, SetMidiNotes, AddPlugin, ReplacePlugin, RemovePlugin, SetPluginParam,
-          SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, SetMasterProfile, AddMarker, RemoveMarker],
+          SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, SetMeta, SetMasterProfile, AddMarker, RemoveMarker],
     Field(discriminator="op"),
 ]

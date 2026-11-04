@@ -1,0 +1,11 @@
+{
+  "name": "melodic_techno_dynamic",
+  "target_lufs": -10.0,
+  "ceiling_dbtp": -1.0,
+  "input_peak_dbfs": -6.0,
+  "low_mono_hz": 120,
+  "tilt_db": 0.5,
+  "glue_threshold_db": -12.0,
+  "glue_ratio": 1.5,
+  "release_ms": 80
+}

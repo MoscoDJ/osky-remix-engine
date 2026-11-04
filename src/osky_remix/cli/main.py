@@ -1,5 +1,6 @@
 import typer
 
+from .agent import evaluate_cmd, improve_cmd, vary_cmd
 from .analyze import analyze, ingest, separate
 from .doctor import doctor
 from .produce import compare, compose, export, graph, package_app, render
@@ -17,6 +18,9 @@ app.command("graph")(graph)
 app.command("compare")(compare)
 app.command("export")(export)
 app.add_typer(package_app, name="package")
+app.command("evaluate")(evaluate_cmd)
+app.command("improve")(improve_cmd)
+app.command("vary")(vary_cmd)
 app.add_typer(project_app, name="project")
 app.add_typer(op_app, name="op")
 app.add_typer(asset_app, name="asset")

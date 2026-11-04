@@ -3,7 +3,7 @@
 Motor de producción de remixes headless, modular, no destructivo y reproducible, operado por
 Claude desde una CLI, con interfaz web local para supervisión (etapa 6).
 
-Estado: **etapas 0 a 4 completas**; hito 1 (32 compases de melodic techno con voz extraída) cumplido. Ver `docs/ROADMAP.md`.
+Estado: **etapas 0 a 5 completas**; hitos 1 (32 compases de melodic techno con voz extraída) y 2 (tres arreglos sin perder ediciones manuales) cumplidos. Ver `docs/ROADMAP.md`.
 
 ## Requisitos del sistema (Ubuntu / Kubuntu)
 
@@ -62,6 +62,16 @@ uv run osky-remix export mi-remix entrega/ --rev idea && uv run osky-remix packa
 
 Ver `docs/AUDIO_ENGINE.md`.
 
+## Agente
+
+```bash
+uv run osky-remix evaluate mi-remix --rev idea
+uv run osky-remix improve mi-remix --branch idea
+uv run osky-remix vary mi-remix --from idea --variants A,B,C
+```
+
+Ver `docs/AGENT.md` y `docs/CODEX_WORKFLOW.md`.
+
 ## Pruebas
 
 ```bash
@@ -73,6 +83,8 @@ uv run pytest -m compat         # capacidades reales (lentas)
 ## Documentación
 
 - `docs/ARCHITECTURE.md` — separación de responsabilidades
+- `docs/AGENT.md` — evaluador, acciones, planificador, variaciones (hito 2)
+- `docs/CODEX_WORKFLOW.md` — cómo trabaja Claude con el motor
 - `docs/AUDIO_ENGINE.md` — composición, plantillas, renderizador, congelado y calibración
 - `docs/ANALYSIS.md` — análisis, separación, confianza y verificación
 - `docs/PROJECT_SCHEMA.md` — modelo, unidades, operaciones y revisiones

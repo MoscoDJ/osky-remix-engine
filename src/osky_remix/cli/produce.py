@@ -25,45 +25,29 @@ def _parse_time(s: str) -> float:
     return float(s)
 
 
-def compose(name: str,
-            analysis: str = typer.Option(..., "--analysis", help="sha del reporte de análisis"),
-            vocals: Optional[str] = typer.Option(None, "--vocals", help="sha del stem de voz (sin estirar)"),
-            at: str = typer.Option(..., "--at", help="inicio de la frase vocal en el original (m:ss.s)"),
-            bars: int = typer.Option(32, "--bars"),
-            template: str = typer.Option("melodic_techno", "--template", "-t"),
-            bpm: Optional[float] = typer.Option(None, "--bpm"),
-            seed: int = typer.Option(1, "--seed"),
-            branch: Optional[str] = typer.Option(None, "--branch"),
-            author: str = typer.Option("claude", "--author", "-a"),
-            message: Optional[str] = typer.Option(None, "-m"),
-            as_json: bool = typer.Option(False, "--json")):
-    """Genera un arreglo (operaciones atómicas) a partir del análisis y la voz extraída."""
+def build_compose_context(repo, analysis: str, vocals: str | None, at: str, bars: int, bpm: float, seed: int):
+    """Contexto de composición (análisis, voz estirada y melodía transcrita; todo en caché)."""
     from ..analysis.pipeline import AnalysisReport
     from ..analysis.transcribe import transcribe
-    from ..audio.plugin_host import SURGE_FACTORY, SURGE_XT_VST3
     from ..audio.stretch import rubberband_version, stretch
-    from ..composition.arranger import arrange, load_template
     from ..composition.context import VocalSource, build_context
-    repo = _repo(name)
-    try:
-        tpl = load_template(template)
-    except ValueError as e:
-        _fail(str(e))
-    bpm = bpm or tpl["bpm"]
-    _, apath = _asset_path(repo, analysis)
+    asha, apath = _asset_path(repo, analysis)
     report = AnalysisReport.model_validate_json(apath.read_text())
     ctx = build_context(report, _parse_time(at), bpm, seed)
     sr = report.sample_rate
     new_assets = []
+    vsha = None
     if vocals:
         vsha, vpath = _asset_path(repo, vocals)
         ratio = ctx.ratio
         key = cache_key("stretch", "1", [vsha], {"ratio": round(ratio, 10)})
         hit = repo.cache.get_json(key)
+        st_asset = None
         if hit and repo.assets.exists(hit["sha"]):
-            st_asset = repo.load().assets.get(hit["sha"])
-        else:
-            st_asset = None
+            st_asset = repo.assets.ingest(repo.assets.find(hit["sha"]), AssetKind.stem, Provenance(
+                tool="rubberband", tool_version=rubberband_version(),
+                params={"tempo_ratio": ratio, "from_bpm": ctx.source_bpm, "to_bpm": bpm, "formant": True},
+                parents=[vsha]), name=f"voz ×{ratio:.3f}.wav")
         if st_asset is None:
             console.print(f"Estirando la voz ×{ratio:.4f} ({ctx.source_bpm:.3f} → {bpm} BPM)…")
             with tempfile.TemporaryDirectory() as td:
@@ -72,12 +56,11 @@ def compose(name: str,
                     tool="rubberband", tool_version=rubberband_version(),
                     params={"tempo_ratio": ratio, "from_bpm": ctx.source_bpm, "to_bpm": bpm, "formant": True},
                     parents=[vsha]), name=f"voz ×{ratio:.3f}.wav")
-            new_assets.append(st_asset)
             repo.cache.put_json(key, {"sha": st_asset.sha256})
+        new_assets.append(st_asset)
         spb = 60 / bpm * sr
         region = int(round(ctx.beats[ctx.b0] / ratio))
         ctx.vocal = VocalSource(st_asset.sha256, sr, region, spb, st_asset.frames)
-        # melodía de la voz para el lead (Basic Pitch, en caché)
         mkey = cache_key("vocal_melody", "1", [st_asset.sha256], {"region": region, "bars": bars})
         mel = repo.cache.get_json(mkey)
         if mel is None:
@@ -90,6 +73,34 @@ def compose(name: str,
             mel = {"notes": [(n.start, n.end, n.pitch) for n in clean]}
             repo.cache.put_json(mkey, mel)
         ctx.melody = [tuple(n) for n in mel["notes"]]
+    meta = {"analysis": asha, "vocals": vsha, "at": at, "bars": bars, "bpm": bpm, "seed": seed}
+    return ctx, new_assets, meta
+
+
+def compose(name: str,
+            analysis: str = typer.Option(..., "--analysis", help="sha del reporte de análisis"),
+            vocals: Optional[str] = typer.Option(None, "--vocals", help="sha del stem de voz (sin estirar)"),
+            at: str = typer.Option(..., "--at", help="inicio de la frase vocal en el original (m:ss.s)"),
+            bars: int = typer.Option(32, "--bars"),
+            template: str = typer.Option("melodic_techno", "--template", "-t"),
+            bpm: Optional[float] = typer.Option(None, "--bpm"),
+            seed: int = typer.Option(1, "--seed"),
+            variant: str = typer.Option("A", "--variant"),
+            branch: Optional[str] = typer.Option(None, "--branch"),
+            author: str = typer.Option("claude", "--author", "-a"),
+            message: Optional[str] = typer.Option(None, "-m"),
+            as_json: bool = typer.Option(False, "--json")):
+    """Genera un arreglo (operaciones atómicas) a partir del análisis y la voz extraída."""
+    from ..audio.plugin_host import SURGE_FACTORY, SURGE_XT_VST3
+    from ..composition.arranger import arrange, load_template
+    repo = _repo(name)
+    try:
+        tpl = load_template(template)
+    except ValueError as e:
+        _fail(str(e))
+    bpm = bpm or tpl["bpm"]
+    ctx, new_assets, cmeta = build_compose_context(repo, analysis, vocals, at, bars, bpm, seed)
+    cmeta["template"] = template
     presets = {}
     if SURGE_XT_VST3.exists():
         for role, spec in tpl["instruments"].items():
@@ -101,7 +112,10 @@ def compose(name: str,
                 new_assets.append(a)
     else:
         console.print("[yellow]Surge XT no disponible: se usa el sintetizador integrado[/]")
-    plan = arrange(tpl, ctx, bars, presets)
+    try:
+        plan = arrange(tpl, ctx, bars, presets, variant=variant, compose_meta=cmeta)
+    except ValueError as e:
+        _fail(str(e))
     known = repo.load(branch).assets if branch else repo.load().assets
     reg = [{"op": "register_asset", "asset": a.model_dump(mode="json")} for a in
            {a.sha256: a for a in new_assets}.values() if a.sha256 not in known]

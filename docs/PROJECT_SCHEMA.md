@@ -38,7 +38,10 @@ ruteos circulares (salidas, envíos y sidechain).
 `add_track`, `remove_track`, `set_track`, `lock_track`, `unlock_track`, `add_send`, `remove_send`, `register_asset`,
 `add_clip`, `move_clip`, `delete_clip`, `transpose_midi`, `set_midi_notes`, `add_plugin`,
 `replace_plugin`, `remove_plugin`, `set_plugin_param`, `set_automation`, `delete_automation`,
-`set_tempo`, `set_meter`, `set_key`, `set_master_profile`, `add_marker`, `remove_marker`.
+`set_tempo`, `set_meter`, `set_key`, `set_meta`, `set_master_profile`, `add_marker`, `remove_marker`.
+
+`meta` guarda información no sonora: `compose` (cómo se compuso: análisis, voz, inicio, compases,
+tempo, semilla, plantilla) y `arrangement` (variante y secciones con su energía).
 
 Cada una: **precondiciones** → aplicar sobre copia → **revalidación completa** →
 **postcondiciones**. Un lote (`osky-remix op apply`) es atómico: si falla la operación *n*, se

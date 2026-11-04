@@ -719,6 +719,12 @@
       "default": null,
       "title": "Key"
     },
+    "meta": {
+      "additionalProperties": true,
+      "description": "metadatos no sonoros (p. ej. cómo se compuso)",
+      "title": "Meta",
+      "type": "object"
+    },
     "master_profile": {
       "default": "club",
       "description": "perfil de mastering por defecto",

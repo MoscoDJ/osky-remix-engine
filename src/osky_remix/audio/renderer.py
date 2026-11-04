@@ -277,25 +277,31 @@ class Renderer:
         return self.post[tid]
 
     # ---------------------------------------------------------------- render completo
-    def render(self, out_dir: Path, profile: str | MasterProfile = "club", stems: bool = True,
-               name: str = "mix") -> RenderReport:
-        prof = profile if isinstance(profile, MasterProfile) else load_profile(profile)
-        out_dir.mkdir(parents=True, exist_ok=True)
+    def run(self, profile: str | MasterProfile | None = None):
+        """Mezcla y master en memoria: (premaster, MasterResult, perfil)."""
+        prof = profile if isinstance(profile, MasterProfile) else load_profile(profile or self.p.master_profile)
         pre = self.output(self.graph.master)
         self.report.premaster_lufs = round(integrated_lufs(pre, self.sr), 2)
-        files = {}
-        f_pre = out_dir / f"{name}_premaster.wav"
-        sf.write(f_pre, pre, self.sr, subtype="FLOAT")
-        files["premaster"] = str(f_pre)
         res = master(pre, self.sr, prof)
-        f_m = out_dir / f"{name}_master.wav"
-        sf.write(f_m, res.audio, self.sr, subtype="PCM_24")
-        files["master"] = str(f_m)
+        self.last_master = res.audio
         self.report.lufs = round(res.lufs, 2)
         self.report.true_peak_dbtp = round(res.true_peak_dbtp, 2)
         self.report.profile = res.profile
         self.report.mastering_log = res.log
         self.report.quality = quality_report(res.audio, self.sr, prof.ceiling_dbtp, prof.target_lufs, pre)
+        return pre, res, prof
+
+    def render(self, out_dir: Path, profile: str | MasterProfile | None = None, stems: bool = True,
+               name: str = "mix") -> RenderReport:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pre, res, prof = self.run(profile)
+        files = {}
+        f_pre = out_dir / f"{name}_premaster.wav"
+        sf.write(f_pre, pre, self.sr, subtype="FLOAT")
+        files["premaster"] = str(f_pre)
+        f_m = out_dir / f"{name}_master.wav"
+        sf.write(f_m, res.audio, self.sr, subtype="PCM_24")
+        files["master"] = str(f_m)
         if stems:
             sd = out_dir / f"{name}_stems"
             sd.mkdir(exist_ok=True)

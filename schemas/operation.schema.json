@@ -1024,6 +1024,31 @@
       "title": "SetMasterProfile",
       "type": "object"
     },
+    "SetMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_meta",
+          "default": "set_meta",
+          "title": "Op",
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "SetMeta",
+      "type": "object"
+    },
     "SetMeter": {
       "additionalProperties": false,
       "properties": {
@@ -1355,6 +1380,7 @@
         "set_automation": "#/$defs/SetAutomation",
         "set_key": "#/$defs/SetKey",
         "set_master_profile": "#/$defs/SetMasterProfile",
+        "set_meta": "#/$defs/SetMeta",
         "set_meter": "#/$defs/SetMeter",
         "set_midi_notes": "#/$defs/SetMidiNotes",
         "set_plugin_param": "#/$defs/SetPluginParam",
@@ -1431,6 +1457,9 @@
       },
       {
         "$ref": "#/$defs/SetKey"
+      },
+      {
+        "$ref": "#/$defs/SetMeta"
       },
       {
         "$ref": "#/$defs/SetMasterProfile"

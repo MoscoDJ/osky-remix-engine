@@ -12,7 +12,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -229,6 +229,7 @@ class Project(Strict):
     sample_rate: Literal[44100, 48000, 88200, 96000] = 48000
     ppq: Literal[960] = PPQ
     key: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict, description="metadatos no sonoros (p. ej. cómo se compuso)")
     master_profile: str = Field("club", pattern=r"^[a-z0-9_\-]{1,64}$", description="perfil de mastering por defecto")
     tempo: list[TempoPointM] = Field(default_factory=lambda: [TempoPointM(tick=0, bpm=124.0)])
     meter: list[MeterPointM] = Field(default_factory=lambda: [MeterPointM(bar=0, numerator=4)])

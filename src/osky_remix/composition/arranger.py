@@ -2,14 +2,19 @@
 
 No escribe el proyecto: devuelve operaciones que ``op apply`` / ``ProjectRepo.commit``
 aplican de forma atómica (todo o nada) en una revisión nueva.
+
+- ``arrange``: proyecto nuevo (crea pistas, plugins, mezcla, clips, automatización, marcadores).
+- ``rearrange``: proyecto existente; regenera clips y automatización de las pistas generadas que
+  NO estén bloqueadas, con una variante. Las pistas bloqueadas (ediciones manuales) no se tocan.
 """
 from __future__ import annotations
 
+import copy
 import json
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 
 from ..core.config import REPO_ROOT
+from ..core.models import Project
 from . import bass as B
 from . import drums as D
 from . import harmony as H
@@ -19,6 +24,16 @@ from .theory import BAR, TICKS_PER_BEAT, key_scale
 
 TEMPLATES = REPO_ROOT / "templates"
 TRACK_ORDER = ["kick", "drums", "bass", "pad", "arp", "lead", "fx", "vox"]
+DEFAULT_ENERGY = {"intro": 1, "break": 1, "outro": 1, "voz": 2, "build": 2, "drop": 3}
+
+# Variantes de arreglo: mismas secciones (la voz no se mueve), distinto contenido.
+VARIANTS: dict[str, dict] = {
+    "A": {"label": "rodante (base)"},
+    "B": {"label": "contratiempo + motivo", "seed_offset": 11, "arp_shape": "octaves", "lead": "motif",
+          "lead_register": 79, "bass": {"voz": "offbeat"}, "drums_delta": {"intro": 1}},
+    "C": {"label": "minimal + lead alto", "seed_offset": 23, "arp_shape": "pulse", "lead_register": 86,
+          "bass": {"intro": "sustained", "voz": "sustained"}, "drums_delta": {"voz": -1}, "pad_sections": ["drop"]},
+}
 
 
 def load_template(name: str) -> dict:
@@ -34,6 +49,15 @@ class Plan:
     ops: list[dict]
     sections: list[dict]
     tracks: list[str]
+    skipped: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Parts:
+    clips: list[tuple[str, dict]]
+    autom: list[dict]              # {"track", "fx"|None, "target"|None, "param", "points"}
+    sections: list[dict]
+    used: set[str]
 
 
 def _clip(cid: str, start: int, length: int, notes) -> dict:
@@ -41,18 +65,37 @@ def _clip(cid: str, start: int, length: int, notes) -> dict:
             "notes": [n.model_dump() for n in notes if n.tick < length]}
 
 
-def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], prefix: str = "") -> Plan:
-    """``presets``: rol -> sha del .fxp ya registrado (o ausente para usar el integrado)."""
+def sections_for(tpl: dict, bars: int, variant: str = "A") -> tuple[list[dict], dict]:
     key = str(bars)
     if key not in tpl["arrangements"]:
         raise ValueError(f"la plantilla no tiene arreglo de {bars} compases (hay: {', '.join(tpl['arrangements'])})")
-    secs = tpl["arrangements"][key]
+    if variant not in VARIANTS:
+        raise ValueError(f"variante desconocida '{variant}' (hay: {', '.join(VARIANTS)})")
+    v = VARIANTS[variant]
+    secs = copy.deepcopy(tpl["arrangements"][key])
+    for s in secs:
+        s.setdefault("energy", DEFAULT_ENERGY.get(s["name"], 2))
+        if s["name"] in v.get("bass", {}) and s.get("bass"):
+            s["bass"] = v["bass"][s["name"]]
+        d = v.get("drums_delta", {}).get(s["name"])
+        if d and s.get("drums") is not None:
+            s["drums"] = max(0, min(3, s["drums"] + d))
+        if s["name"] in v.get("pad_sections", []):
+            s["pad"] = True
+        if s.get("lead") and v.get("lead"):
+            s["lead"] = v["lead"]
+    return secs, v
+
+
+def generate_parts(tpl: dict, ctx: ComposeContext, bars: int, prefix: str = "", variant: str = "A") -> Parts:
+    secs, v = sections_for(tpl, bars, variant)
     scale = key_scale(ctx.key)
-    used: set[str] = set()
     clips: list[tuple[str, dict]] = []
+    autom: list[dict] = []
     t0, vocal_bar = 0, 0
+    seed0 = ctx.seed * 100 + v.get("seed_offset", 0)
     for si, s in enumerate(secs):
-        nb, seed = s["bars"], ctx.seed * 100 + si
+        nb, seed = s["bars"], seed0 + si
         L = nb * BAR
         name = s["name"]
         hb_from = s.get("harmony_from", vocal_bar if s.get("vocal") else 0)
@@ -74,9 +117,9 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
             clips.append(("pad", _clip(f"{prefix}pad-{name}", t0, L, H.pads(hb, lo, hi))))
         if s.get("arp"):
             lo, hi = tpl["instruments"]["arp"].get("range", [62, 86])
-            clips.append(("arp", _clip(f"{prefix}arp-{name}", t0, L, H.arp(hb, seed, lo, hi))))
+            clips.append(("arp", _clip(f"{prefix}arp-{name}", t0, L, H.arp(hb, seed, lo, hi, v.get("arp_shape")))))
         if s.get("lead"):
-            reg = tpl["instruments"]["lead"].get("register", 74)
+            reg = v.get("lead_register", tpl["instruments"]["lead"].get("register", 74))
             notes = []
             if s["lead"] == "vocal_melody" and ctx.melody:
                 spb = 60 / ctx.bpm
@@ -95,37 +138,73 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
         if fxn:
             clips.append(("fx", _clip(f"{prefix}fx-{name}", t0, L, fxn)))
         if s.get("vocal") == "phrase" and ctx.vocal is not None:
-            v = ctx.vocal
+            vs = ctx.vocal
             pick_ticks = min(TICKS_PER_BEAT, t0)                     # anacrusa: hasta 1 tiempo antes
-            pick = int(round(pick_ticks / TICKS_PER_BEAT * v.samples_per_beat))
-            off = v.region_start + int(round(vocal_bar * 4 * v.samples_per_beat)) - pick
-            length = int(round(nb * 4 * v.samples_per_beat)) + pick
-            if off >= 0 and off + length <= v.frames:
-                clips.append(("vox", {"type": "audio", "id": f"{prefix}vox-{name}", "asset": v.asset,
+            pick = int(round(pick_ticks / TICKS_PER_BEAT * vs.samples_per_beat))
+            off = vs.region_start + int(round(vocal_bar * 4 * vs.samples_per_beat)) - pick
+            length = int(round(nb * 4 * vs.samples_per_beat)) + pick
+            if off >= 0 and off + length <= vs.frames:
+                clips.append(("vox", {"type": "audio", "id": f"{prefix}vox-{name}", "asset": vs.asset,
                                       "start_tick": t0 - pick_ticks, "source_offset": off,
-                                      "source_length": length, "fade_in": int(0.01 * v.sr), "fade_out": int(0.25 * v.sr)}))
+                                      "source_length": length, "fade_in": int(0.01 * vs.sr), "fade_out": int(0.25 * vs.sr)}))
             vocal_bar += nb
-        for tr, _ in clips:
-            used.add(tr)
+        for a in s.get("automation", []):
+            autom.append({**a, "t1": t0 + a.get("from_bar", 0) * BAR, "t2": t0 + a.get("to_bar", nb) * BAR})
         t0 += L
-    tracks = [t for t in TRACK_ORDER if t in used]
+    return Parts(clips=clips, autom=autom, sections=secs, used={t for t, _ in clips})
+
+
+def _lane_ops(autom: list[dict], resolve, prefix: str, allowed: set[str]) -> list[dict]:
+    lanes: dict[tuple[str, str], list[dict]] = {}
+    for a in autom:
+        if a["track"] not in allowed:
+            continue
+        target = a.get("target") or resolve(a["track"], a["fx"], a["param"])
+        if target is None:
+            continue
+        lanes.setdefault((a["track"], target), []).extend([
+            {"tick": a["t1"], "value": a["from"], "curve": a.get("curve", "linear")},
+            {"tick": a["t2"], "value": a["to"], "curve": a.get("curve", "linear")}])
+    ops = []
+    for (tr, target), pts in lanes.items():
+        pts.sort(key=lambda p: p["tick"])
+        lid = f"{prefix}auto-{tr}-{target.replace('.', '-')}"[:64]
+        ops.append({"op": "set_automation", "lane": {"id": lid, "track": tr, "target": target, "points": pts}})
+    return ops
+
+
+def _marker_ops(secs: list[dict], prefix: str) -> list[dict]:
+    ops, tick = [], 0
+    for s in secs:
+        ops.append({"op": "add_marker", "marker": {"id": f"{prefix}m-{s['name']}", "tick": tick, "label": s["name"]}})
+        tick += s["bars"] * BAR
+    return ops
+
+
+def section_meta(secs: list[dict]) -> list[dict]:
+    return [{"name": s["name"], "bars": s["bars"], "energy": s.get("energy", 2), "vocal": bool(s.get("vocal"))} for s in secs]
+
+
+def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], prefix: str = "",
+            variant: str = "A", compose_meta: dict | None = None) -> Plan:
+    """``presets``: rol -> sha del .fxp ya registrado (o ausente para usar el integrado)."""
+    parts = generate_parts(tpl, ctx, bars, prefix, variant)
+    tracks = [t for t in TRACK_ORDER if t in parts.used]
     ops: list[dict] = [{"op": "set_tempo", "points": [{"tick": 0, "bpm": ctx.bpm}]}, {"op": "set_key", "key": _short_key(ctx.key)}]
     for t in tracks:
         kind = "audio" if t == "vox" else "instrument"
         ops.append({"op": "add_track", "id": t, "name": t.capitalize(), "kind": kind})
         if kind == "instrument":
-            role = t
-            if role in ("kick", "drums"):
+            if t in ("kick", "drums"):
                 inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "drums"}
-            elif role == "fx":
+            elif t == "fx":
                 inst = {"id": "fx-inst", "backend": "builtin", "uri": "fx"}
-            elif role in presets:
-                inst = {"id": f"{t}-inst", "backend": "surge_xt", "uri": "Surge XT.vst3", "preset": presets[role]}
+            elif t in presets:
+                inst = {"id": f"{t}-inst", "backend": "surge_xt", "uri": "Surge XT.vst3", "preset": presets[t]}
             else:
                 inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "synth"}
             ops.append({"op": "add_plugin", "track": t, "plugin": inst})
     mix = tpl.get("mix", {})
-    # buses y retornos que alguna pista usa
     groups = {**{k: ("bus", v) for k, v in tpl.get("buses", {}).items()},
               **{k: ("return", v) for k, v in tpl.get("returns", {}).items()}}
     needed = []
@@ -168,37 +247,49 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
                                                                        "uri": fx["uri"], "params": fx.get("params", {})}})
     if tpl.get("master_profile"):
         ops.append({"op": "set_master_profile", "profile": tpl["master_profile"]})
-    for tr, c in clips:
+    for tr, c in parts.clips:
         ops.append({"op": "add_clip", "track": tr, "clip": c})
-    # automatización declarada por sección: un carril por destino con todos sus puntos
-    lanes: dict[tuple[str, str], list[dict]] = {}
-    tick = 0
-    for s in secs:
-        for a in s.get("automation", []):
-            if a["track"] not in tracks:
-                continue
-            if "target" in a:
-                target = a["target"]
-            else:
-                pid = fx_ids.get((a["track"], a["fx"]))
-                if pid is None:
-                    raise ValueError(f"automatización: la pista '{a['track']}' no tiene el efecto '{a['fx']}'")
-                target = f"{pid}.{a['param']}"
-            t1 = tick + a.get("from_bar", 0) * BAR
-            t2 = tick + a.get("to_bar", s["bars"]) * BAR
-            lanes.setdefault((a["track"], target), []).extend([
-                {"tick": t1, "value": a["from"], "curve": a.get("curve", "linear")},
-                {"tick": t2, "value": a["to"], "curve": a.get("curve", "linear")}])
-        tick += s["bars"] * BAR
-    for (tr, target), pts in lanes.items():
-        pts.sort(key=lambda p: p["tick"])
-        lid = f"{prefix}auto-{tr}-{target.replace('.', '-')}"[:64]
-        ops.append({"op": "set_automation", "lane": {"id": lid, "track": tr, "target": target, "points": pts}})
-    tick = 0
-    for s in secs:
-        ops.append({"op": "add_marker", "marker": {"id": f"{prefix}m-{s['name']}", "tick": tick, "label": s["name"]}})
-        tick += s["bars"] * BAR
-    return Plan(ops=ops, sections=secs, tracks=tracks)
+
+    def resolve(track, fx, param):
+        pid = fx_ids.get((track, fx))
+        if pid is None:
+            raise ValueError(f"automatización: la pista '{track}' no tiene el efecto '{fx}'")
+        return f"{pid}.{param}"
+    ops += _lane_ops(parts.autom, resolve, prefix, set(tracks))
+    ops += _marker_ops(parts.sections, prefix)
+    ops.append({"op": "set_meta", "key": "arrangement", "value": {
+        "variant": variant, "label": VARIANTS[variant]["label"], "prefix": prefix, "sections": section_meta(parts.sections)}})
+    if compose_meta:
+        ops.append({"op": "set_meta", "key": "compose", "value": compose_meta})
+    return Plan(ops=ops, sections=parts.sections, tracks=tracks)
+
+
+def rearrange(p: Project, tpl: dict, ctx: ComposeContext, bars: int, variant: str, prefix: str) -> Plan:
+    """Nuevo arreglo sobre un proyecto existente sin tocar pistas bloqueadas."""
+    parts = generate_parts(tpl, ctx, bars, prefix, variant)
+    existing = {t.id: t for t in p.tracks}
+    free = {t for t in TRACK_ORDER if t in existing and not existing[t].locked}
+    locked = [t for t in TRACK_ORDER if t in existing and existing[t].locked]
+    ops: list[dict] = []
+    for t in sorted(free):
+        ops += [{"op": "delete_clip", "clip": c.id} for c in existing[t].clips]
+    ops += [{"op": "delete_automation", "lane": a.id} for a in p.automation if a.track in free and "auto-" in a.id]
+    ops += [{"op": "remove_marker", "marker": m.id} for m in p.markers]
+    skipped = [f"pista bloqueada '{t}': se conserva tal cual" for t in locked]
+    for tr, c in parts.clips:
+        if tr in free:
+            ops.append({"op": "add_clip", "track": tr, "clip": c})
+        elif tr not in existing:
+            skipped.append(f"la variante usa '{tr}' pero el proyecto no tiene esa pista")
+
+    def resolve(track, fx, param):
+        slot = next((s for s in existing[track].plugins if s.uri == fx and s.backend == "builtin"), None)
+        return None if slot is None else f"{slot.id}.{param}"
+    ops += _lane_ops(parts.autom, resolve, prefix, free)
+    ops += _marker_ops(parts.sections, prefix)
+    ops.append({"op": "set_meta", "key": "arrangement", "value": {
+        "variant": variant, "label": VARIANTS[variant]["label"], "prefix": prefix, "sections": section_meta(parts.sections)}})
+    return Plan(ops=ops, sections=parts.sections, tracks=sorted(free), skipped=skipped)
 
 
 def _short_key(key: str) -> str:
