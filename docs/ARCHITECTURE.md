@@ -17,6 +17,15 @@ Los plugins y modelos se instalan por separado y se validan con `osky-remix doct
 plugin falla, se registra, se aísla (cada prueba corre en su propio proceso) y se usa un
 backend alternativo cuando exista.
 
+- **Biblioteca de samples** (`samples/`): `AssetStore` propio en `workspace/samples/assets`,
+  rasgos (`samples.features`, sin modelos) en `CacheStore` por sha + `FEATURES_VERSION`, índice
+  SQLite `library.db`. Un kit (`samples.kit`) es un asset JSON nota → sample referenciado por
+  `PluginSlot.preset` de los instrumentos integrados `drums` y `sampler`; el renderer exige que
+  sus samples estén registrados en el proyecto (`validate_capabilities`).
+- **Lotes** (`batch/`): pasos enchufables `fn(ctx) -> dict` que llaman en proceso a las
+  funciones de la CLI (`--json`); manifiesto JSON con bloqueo `fcntl` y escritura atómica por
+  canción/paso; reanudación saltando pasos hechos; `--jobs` con procesos `spawn`, separación
+  serializada por un bloqueo global y renders con los bloqueos de la caché.
 
 ## Correcciones de fiabilidad (2026-11-04)
 

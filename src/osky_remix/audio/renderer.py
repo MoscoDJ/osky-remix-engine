@@ -36,7 +36,7 @@ from .effects import EFFECTS, apply_effect, pan_gain_curve
 from .graph import build_graph, describe
 
 RENDER_VERSION = "3.1.0"
-INSTRUMENTS_BUILTIN = {"drums", "fx", "synth"}
+INSTRUMENTS_BUILTIN = {"drums", "fx", "synth", "sampler"}   # sampler/drums: kit de samples en preset
 TAIL_S = 4.0
 
 
@@ -146,9 +146,25 @@ class Renderer:
         return sorted(out)
 
     # ---------------------------------------------------------------- instrumentos
-    def _render_builtin(self, uri: str, notes, params: dict) -> np.ndarray:
+    def _kit(self, sha: str) -> dict:
+        """Kit de samples (``samples.kit``) del preset; sus samples deben estar registrados."""
+        from ..samples.kit import load_kit
+        path = self.assets.find(sha)
+        if path is None:
+            raise ValueError(f"kit {sha[:12]} no está en el almacén")
+        kit = load_kit(path)
+        for pitch, v in kit.items():
+            if v["sample"] not in self.p.assets or not self.assets.exists(v["sample"]):
+                raise ValueError(f"el sample {v['sample'][:12]} (nota {pitch}) del kit no está registrado en el proyecto")
+        return kit
+
+    def _render_builtin(self, uri: str, notes, params: dict, kit_sha: str | None = None) -> np.ndarray:
+        from ..samples.kit import KIT_INSTRUMENTS, render_kit
+        kit = self._kit(kit_sha) if kit_sha and uri in KIT_INSTRUMENTS else {}
         y = np.zeros(self.n)
         for a, b, p, v in notes:
+            if p in kit or uri == "sampler":
+                continue                                  # suena desde el kit (abajo)
             if uri == "drums":
                 h = synth.drum_hit(p, v, self.sr, a)
             elif uri == "fx":
@@ -158,7 +174,10 @@ class Renderer:
             k = min(len(h), self.n - a)
             if k > 0:
                 y[a:a + k] += h[:k]
-        return np.stack([y, y], 1)
+        out = np.stack([y, y], 1)
+        if kit:
+            out = out + render_kit(notes, kit, self._asset_audio, self.n)
+        return out
 
     def _preset_path(self, slot: PluginSlot) -> Path | None:
         if not slot.preset:
@@ -256,7 +275,7 @@ class Renderer:
                 if inst.backend == "surge_xt":
                     y += self._render_surge(t, inst, notes)
                 elif inst.backend == "builtin" and inst.uri in INSTRUMENTS_BUILTIN:
-                    y += self._render_builtin(inst.uri, notes, inst.params).astype(np.float32)
+                    y += self._render_builtin(inst.uri, notes, inst.params, inst.preset).astype(np.float32)
                 else:
                     raise ValueError(f"instrumento no soportado en {t.id}: {inst.backend}/{inst.uri}")
         return y
@@ -331,6 +350,10 @@ class Renderer:
                 if not inst.bypass and not (inst.backend == "surge_xt" or
                    (inst.backend == "builtin" and inst.uri in INSTRUMENTS_BUILTIN)):
                     raise ValueError(f"instrumento no soportado: {t.id}/{inst.uri}")
+                if not inst.bypass and inst.backend == "builtin" and inst.uri == "sampler" and not inst.preset:
+                    raise ValueError(f"sampler sin kit de samples: {t.id}")
+                if not inst.bypass and inst.backend == "builtin" and inst.uri in ("drums", "sampler") and inst.preset:
+                    self._kit(inst.preset)
             for slot in self._effects(t):
                 if slot.backend != "builtin" or slot.uri not in EFFECTS:
                     raise ValueError(f"efecto no soportado para entrega: {t.id}/{slot.uri}")

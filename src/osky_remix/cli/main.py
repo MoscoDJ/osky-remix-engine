@@ -2,9 +2,11 @@ import typer
 
 from .agent import evaluate_cmd, improve_cmd, vary_cmd
 from .analyze import analyze, ingest, reference, separate
+from .batch import batch
 from .doctor import doctor
 from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
+from .samples import samples_app
 
 app = typer.Typer(help="Osky Remix Engine: producción de remixes headless operada por Claude.",
                   no_args_is_help=True, add_completion=False)
@@ -22,10 +24,12 @@ app.add_typer(package_app, name="package")
 app.command("evaluate")(evaluate_cmd)
 app.command("improve")(improve_cmd)
 app.command("vary")(vary_cmd)
+app.command("batch")(batch)
 app.add_typer(project_app, name="project")
 app.add_typer(op_app, name="op")
 app.add_typer(asset_app, name="asset")
 app.add_typer(schema_app, name="schema")
+app.add_typer(samples_app, name="samples")
 
 
 @app.command("serve")
