@@ -7,7 +7,7 @@ SURGE_SHA256=a6e55064487f624147d515b9ae5fc79a568b69746675b2083abde628ca7bb151
 
 echo "== Paquetes del sistema"
 sudo apt-get update -qq
-sudo apt-get install -y -qq ffmpeg rubberband-cli sox fluidsynth faust csound curl
+sudo apt-get install -y -qq ffmpeg rubberband-cli sox fluidsynth faust csound curl nodejs npm
 
 if [ ! -d "/usr/lib/vst3/Surge XT.vst3" ]; then
   echo "== Surge XT $SURGE_VER"
@@ -35,4 +35,8 @@ if ! command -v audio-separator >/dev/null; then
   uv tool install --python 3.12 "audio-separator[gpu]" --with audioread || echo "   (omitido: falló la instalación)"
 fi
 
-echo "== Listo. Ejecuta: uv run osky-remix doctor"
+echo "== Interfaz web (React + Vite)"
+(cd frontend && npm ci --no-audit --no-fund && npm run build)
+uv run playwright install chromium || echo "   (Playwright sin navegador: se omiten las pruebas de interfaz)"
+
+echo "== Listo. Ejecuta: uv run osky-remix doctor  y luego  uv run osky-remix serve"

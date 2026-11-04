@@ -3,7 +3,7 @@
 Motor de producción de remixes headless, modular, no destructivo y reproducible, operado por
 Claude desde una CLI, con interfaz web local para supervisión (etapa 6).
 
-Estado: **etapas 0 a 5 completas**; hitos 1 (32 compases de melodic techno con voz extraída) y 2 (tres arreglos sin perder ediciones manuales) cumplidos. Ver `docs/ROADMAP.md`.
+Estado: **etapas 0 a 6 completas**; hitos 1 (32 compases de melodic techno con voz extraída) y 2 (tres arreglos sin perder ediciones manuales) cumplidos. Ver `docs/ROADMAP.md`.
 
 ## Requisitos del sistema (Ubuntu / Kubuntu)
 
@@ -18,6 +18,15 @@ uv run osky-remix doctor             # audita capacidades reales (verifica audio
 uv run osky-remix doctor --list      # pruebas disponibles
 uv run osky-remix doctor -o surge -o mastering --keep   # algunas, conservando audios
 ```
+
+## Interfaz web
+
+```bash
+(cd frontend && npm ci && npm run build)
+uv run osky-remix serve        # http://127.0.0.1:8765
+```
+
+Timeline, mezclador, editor MIDI, render, A/B, evaluación e historial. Ver `docs/UI.md`.
 
 ## Proyectos y operaciones
 
@@ -78,11 +87,13 @@ Ver `docs/AGENT.md` y `docs/CODEX_WORKFLOW.md`.
 uv run pytest -m "not compat and not audio"   # unitarias, rápidas
 uv run pytest -m audio          # análisis sobre fixtures sintéticos (~1 min)
 uv run pytest -m compat         # capacidades reales (lentas)
+uv run pytest -m ui             # interfaz con Playwright (requiere frontend compilado)
 ```
 
 ## Documentación
 
 - `docs/ARCHITECTURE.md` — separación de responsabilidades
+- `docs/UI.md` — interfaz web local
 - `docs/AGENT.md` — evaluador, acciones, planificador, variaciones (hito 2)
 - `docs/CODEX_WORKFLOW.md` — cómo trabaja Claude con el motor
 - `docs/AUDIO_ENGINE.md` — composición, plantillas, renderizador, congelado y calibración

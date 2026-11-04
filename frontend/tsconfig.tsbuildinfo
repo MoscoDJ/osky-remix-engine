@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/components/ABPanel.tsx","./src/components/History.tsx","./src/components/Player.tsx","./src/editor/MidiEditor.tsx","./src/mixer/Mixer.tsx","./src/timeline/Timeline.tsx"],"version":"5.6.3"}

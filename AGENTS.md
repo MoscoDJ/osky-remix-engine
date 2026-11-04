@@ -11,6 +11,8 @@
 - Plugins de Surge XT: usar `audio.plugin_host` (pre-roll, presets .fxp, parámetros como
   automatización constante). Ver hallazgos en `docs/COMPATIBILITY.md`.
 - Canciones, stems, modelos y renders van en `workspace/` (ignorado por git).
-- Commits sin atribución a IA.
+- Commits con `Co-Authored-By: Claude` (decisión del autor del proyecto: la idea es suya, el código de Claude).
 - Ejecutar `uv run pytest -m "not compat"` antes de dar un cambio por terminado; si se tocan
-  audio, plugins o mastering, también `uv run osky-remix doctor`.
+  audio, plugins o mastering, también `uv run osky-remix doctor`. Si se toca el frontend:
+  `cd frontend && npm run build` y `uv run pytest -m ui`.
+- En la interfaz el autor es el usuario; Claude trabaja por la CLI (`-a claude`).

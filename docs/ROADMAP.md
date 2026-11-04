@@ -11,7 +11,7 @@ Cada etapa entrega una demostración funcional, pruebas automatizadas y document
 | 3 | Producción musical: MIDI, síntesis (Surge XT), arreglos, voces, plantillas de género | **Completa** (2026-11-04), hito 1 cumplido |
 | 4 | Mezcla y render: grafo DSP, buses, sidechain, mastering por perfiles, exportación | **Completa** (2026-11-04) |
 | 5 | Automatización con Claude: planificador, acciones, evaluador, variaciones, revisiones | **Completa** (2026-11-04), hito 2 cumplido |
-| 6 | Interfaz híbrida: timeline, mezclador, editor MIDI, A/B, control manual | Siguiente |
+| 6 | Interfaz híbrida: timeline, mezclador, editor MIDI, A/B, control manual | **Completa** (2026-11-04) |
 
 ## Hitos musicales
 

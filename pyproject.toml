@@ -27,13 +27,21 @@ dependencies = [
     # Host de plugins (candidato, sujeto a doctor)
     "dawdreamer>=0.8.3",
     "sqlalchemy>=2.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "websockets>=13",
 ]
 
 [project.scripts]
 osky-remix = "osky_remix.cli.main:app"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "httpx>=0.27",
+    "playwright>=1.48",
+    "pytest>=8",
+    "pytest-playwright>=0.6",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -47,4 +55,5 @@ testpaths = ["tests"]
 markers = [
     "compat: pruebas de compatibilidad que ejecutan herramientas reales (lentas)",
     "audio: análisis sobre fixtures sintéticos (CPU, ~1-2 min)",
+    "ui: pruebas end-to-end de la interfaz con Playwright (requiere frontend compilado)",
 ]

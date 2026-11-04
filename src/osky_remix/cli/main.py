@@ -27,6 +27,17 @@ app.add_typer(asset_app, name="asset")
 app.add_typer(schema_app, name="schema")
 
 
+@app.command("serve")
+def serve(host: str = typer.Option("127.0.0.1", help="solo local por defecto"), port: int = typer.Option(8765)):
+    """Interfaz web local: timeline, mezclador, editor MIDI, A/B e historial."""
+    import uvicorn
+    from ..api.app import FRONTEND_DIST, create_app
+    if not FRONTEND_DIST.exists():
+        typer.echo("Aviso: no hay frontend compilado (cd frontend && npm install && npm run build); solo API.")
+    typer.echo(f"Osky Remix Engine en http://{host}:{port}")
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+
+
 @app.callback()
 def _root() -> None:
     """Osky Remix Engine."""
