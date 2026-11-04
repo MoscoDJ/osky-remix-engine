@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import soundfile as sf
 import typer
 
@@ -25,8 +26,9 @@ def _parse_time(s: str) -> float:
     return float(s)
 
 
-def build_compose_context(repo, analysis: str, vocals: str | None, at: str, bars: int, bpm: float, seed: int):
-    """Contexto de composición (análisis, voz estirada y melodía transcrita; todo en caché)."""
+def build_compose_context(repo, analysis: str, vocals: str | None, at: str, bars: int, bpm: float, seed: int,
+                          reference: str | None = None, harmony: str = "auto"):
+    """Contexto de composición (análisis, voz estirada, melodía transcrita, MIDI de referencia; en caché)."""
     from ..analysis.pipeline import AnalysisReport
     from ..analysis.transcribe import transcribe
     from ..audio.stretch import rubberband_version, stretch
@@ -73,7 +75,41 @@ def build_compose_context(repo, analysis: str, vocals: str | None, at: str, bars
             mel = {"notes": [(n.start, n.end, n.pitch) for n in clean]}
             repo.cache.put_json(mkey, mel)
         ctx.melody = [tuple(n) for n in mel["notes"]]
-    meta = {"analysis": asha, "vocals": vsha, "at": at, "bars": bars, "bpm": bpm, "seed": seed}
+        # energía de la voz original (cada 10 ms) para medir anacrusas
+        xv, _ = sf.read(str(vpath), dtype="float32", always_2d=True)
+        m = np.abs(xv).max(axis=1)
+        hop = sr // 100
+        k = len(m) // hop
+        ctx.vocal_env = 20 * np.log10(np.sqrt((m[: k * hop].reshape(k, hop) ** 2).mean(axis=1)) + 1e-9)
+
+        def provider(beat: int, nbars: int, _st=st_asset):
+            reg = int(round(ctx.beats[beat] / ctx.ratio))
+            key2 = cache_key("vocal_melody", "1", [_st.sha256], {"region": reg, "bars": nbars})
+            hit2 = repo.cache.get_json(key2)
+            if hit2 is None:
+                x2, _ = sf.read(str(repo.assets.find(_st.sha256)), dtype="float32", always_2d=True)
+                with tempfile.TemporaryDirectory() as td2:
+                    f2 = Path(td2) / "seg.wav"
+                    sf.write(f2, x2[reg: reg + int(nbars * 4 * spb)], sr)
+                    clean2, _r = transcribe(f2)
+                hit2 = {"notes": [(n.start, n.end, n.pitch) for n in clean2]}
+                repo.cache.put_json(key2, hit2)
+            return [tuple(n) for n in hit2["notes"]]
+        ctx.melody_provider = provider
+    rsha = None
+    if reference:
+        from ..analysis.midi_ref import Reference
+        rsha, rpath = _asset_path(repo, reference)
+        ctx.reference = Reference.model_validate_json(rpath.read_text())
+        use_midi = harmony == "midi" or (harmony == "auto" and ctx.reference.confidence >= 0.7)
+        if use_midi:
+            midi_ch = [c for c in ctx.reference.chords if c[2] != "N"]
+            ctx.chords_src = midi_ch + [c for c in ctx.chords_src if not any(a <= c[0] < b for a, b, _ in midi_ch)]
+            ctx.chords_src.sort()
+            console.print(f"Armonía del MIDI de referencia (confianza {ctx.reference.confidence:.2f}, "
+                          f"coincide con el audio en {ctx.reference.chord_agreement:.0%})")
+    meta = {"analysis": asha, "vocals": vsha, "at": at, "bars": bars, "bpm": bpm, "seed": seed,
+            "reference": rsha, "harmony": harmony}
     return ctx, new_assets, meta
 
 
@@ -86,6 +122,8 @@ def compose(name: str,
             bpm: Optional[float] = typer.Option(None, "--bpm"),
             seed: int = typer.Option(1, "--seed"),
             variant: str = typer.Option("A", "--variant"),
+            reference: Optional[str] = typer.Option(None, "--reference", help="sha del MIDI de referencia alineado"),
+            harmony: str = typer.Option("auto", "--harmony", help="auto | midi | audio"),
             branch: Optional[str] = typer.Option(None, "--branch"),
             author: str = typer.Option("claude", "--author", "-a"),
             message: Optional[str] = typer.Option(None, "-m"),
@@ -99,7 +137,9 @@ def compose(name: str,
     except ValueError as e:
         _fail(str(e))
     bpm = bpm or tpl["bpm"]
-    ctx, new_assets, cmeta = build_compose_context(repo, analysis, vocals, at, bars, bpm, seed)
+    if harmony not in ("auto", "midi", "audio"):
+        _fail("--harmony debe ser auto, midi o audio")
+    ctx, new_assets, cmeta = build_compose_context(repo, analysis, vocals, at, bars, bpm, seed, reference, harmony)
     cmeta["template"] = template
     presets = {}
     if SURGE_XT_VST3.exists():
@@ -126,13 +166,15 @@ def compose(name: str,
         _fail(f"{e} — no se aplicó ningún cambio (¿pistas ya existentes? usa una rama nueva)", 2)
     except RepoError as e:
         _fail(str(e))
-    info = {"revision": rev.id, "ops": len(rev.ops), "tracks": plan.tracks, "key": ctx.key,
+    regions = [{"section": x["name"], **x.get("_region", {})} for x in plan.sections]
+    info = {"revision": rev.id, "ops": len(rev.ops), "tracks": plan.tracks, "key": ctx.key, "regions": regions,
             "source_bpm": ctx.source_bpm, "bpm": bpm,
             "harmony": ctx.halfbars(0, min(bars, 8))[::2], "melody_notes": len(ctx.melody)}
     _out(as_json, info,
          f"[green]OK[/] revisión {rev.id[:12]} · {len(rev.ops)} operaciones · pistas {', '.join(plan.tracks)}\n"
          f"Tonalidad {ctx.key}; voz {ctx.source_bpm:.3f} → {bpm} BPM; armonía (primeros compases): "
-         + " ".join(info["harmony"]) + f"; melodía del lead: {len(ctx.melody)} notas transcritas")
+         + " ".join(info["harmony"]) + f"; melodía del lead: {len(ctx.melody)} notas transcritas\n"
+         + "\n".join(f"  {r['section']:8s} ← {r.get('label') or '-'} (anacrusa {r.get('pickup_beats', 0)} tiempos)" for r in regions))
 
 
 def render(name: str, rev: Optional[str] = typer.Option(None, "--rev"),

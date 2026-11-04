@@ -191,3 +191,65 @@ def analyze(name: str, sha: str, stems: Optional[str] = typer.Option(None, "--st
     else:
         console.print(text)
         console.print(f"[dim]Reporte {asha[:12]}[/]")
+
+
+def reference(name: str, midi: Path, analysis: str = typer.Option(..., "--analysis"),
+              stems: str = typer.Option(..., "--stems", help="sha del reporte de separación"),
+              author: str = typer.Option("claude", "--author", "-a"), as_json: bool = typer.Option(False, "--json")):
+    """Importa un MIDI de referencia (p. ej. karaoke), lo alinea con la grabación y lo registra."""
+    from ..analysis.midi_ref import build_reference, read_midi
+    from ..analysis.pipeline import AnalysisReport
+    if not midi.exists():
+        _fail(f"no existe {midi}")
+    repo = _repo(name)
+    asha, apath = _asset_path(repo, analysis)
+    rep = AnalysisReport.model_validate_json(apath.read_text())
+    ssha, spath = _asset_path(repo, stems)
+    sep = json.loads(spath.read_text())
+    load = lambda k: sf.read(str(repo.assets.find(sep["stems"][k])), dtype="float32", always_2d=True)[0]
+    if not {"bass", "other", "drums"} <= set(sep["stems"]):
+        _fail("el reporte de separación necesita stems bass, other y drums")
+    msha_asset = repo.assets.ingest(midi, AssetKind.midi, Provenance(tool="import", params={"source_path": str(midi.resolve())}))
+    vkey = next((k for k in ("lead_vocals", "vocals") if k in sep["stems"]), None)
+    vocal_notes = None
+    if vkey:
+        from ..analysis.transcribe import transcribe
+        vn_key = cache_key("vocal_notes", "1", [sep["stems"][vkey]], {})
+        hit = repo.cache.get_json(vn_key)
+        if hit is None:
+            console.print("Transcribiendo la voz original (juez de la alineación)…")
+            clean, _ = transcribe(repo.assets.find(sep["stems"][vkey]))
+            hit = {"notes": [(n.start, n.end, n.pitch) for n in clean]}
+            repo.cache.put_json(vn_key, hit)
+        vocal_notes = [tuple(x) for x in hit["notes"]]
+    console.print("Alineando el MIDI con la grabación…")
+    ref = build_reference(read_midi(midi), load("bass") + load("other"), rep.sample_rate, rep.rhythm.beats,
+                          [(c.start, c.end, c.label) for c in rep.harmony.chords], rep.vocal_activity, load("drums"),
+                          vocal_notes)
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "midi_reference.json"
+        f.write_text(ref.model_dump_json())
+        ra = repo.assets.ingest(f, AssetKind.analysis, Provenance(tool="osky-midi-reference", tool_version=ref.version,
+                                                                  parents=[msha_asset.sha256, asha, ssha]),
+                                name="midi_reference.json")
+    _register(repo, [msha_asset, ra], _author(author), f"Referencia MIDI {midi.name}")
+    data = {"reference": ra.sha256, "midi": msha_asset.sha256, "confidence": ref.confidence,
+            "alignment_similarity": ref.alignment_similarity, "drum_error_ms": ref.drum_error_ms,
+            "lyric_vocal_overlap": ref.lyric_vocal_overlap, "chord_agreement": ref.chord_agreement,
+            "beat_anchors": ref.beat_anchors, "lines": len(ref.lyrics), "vocal_fit": ref.vocal_fit,
+            "channels": {c.channel: f"{c.role} ({len(c.notes)})" for c in ref.channels}}
+    if as_json:
+        print(json.dumps(data, ensure_ascii=False))
+        return
+    console.print(f"Referencia {ra.sha256[:12]} · confianza [bold]{ref.confidence:.2f}[/]\n"
+                  f"  similitud armónica {ref.alignment_similarity}, batería vs. stem {ref.drum_error_ms} ms, "
+                  f"letra sobre voz {ref.lyric_vocal_overlap:.0%}, acordes iguales al audio {ref.chord_agreement:.0%}, "
+                  f"{ref.beat_anchors} negras ancladas")
+    if ref.vocal_fit:
+        best = max(ref.vocal_fit, key=ref.vocal_fit.get)
+        console.print("  juez (voz original en la armonía del MIDI, por desfase): "
+                      + "  ".join(f"{k:+d}:{v:.0%}" for k, v in sorted(ref.vocal_fit.items()))
+                      + ("  ✓" if best in (0, -1) else "  [red]✗ la alineación parece corrida[/]"))
+    console.print("  canales: " + ", ".join(f"{k}={v}" for k, v in data["channels"].items()))
+    for l in ref.lyrics:
+        console.print(f"  {int(l.start // 60)}:{l.start % 60:05.2f}  {l.text}")

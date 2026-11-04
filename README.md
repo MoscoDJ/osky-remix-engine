@@ -49,6 +49,7 @@ El contrato está en `docs/PROJECT_SCHEMA.md` y `schemas/`.
 uv run osky-remix ingest mi-remix cancion.flac                  # original + copia de trabajo
 uv run osky-remix separate mi-remix <sha> -b demucs --lead-backing
 uv run osky-remix analyze mi-remix <sha> --stems <sha-reporte> --md analisis.md
+uv run osky-remix reference mi-remix cancion.mid --analysis <sha> --stems <sha-reporte>   # MIDI de referencia
 ```
 
 Métodos, confianza y verificación en `docs/ANALYSIS.md`.

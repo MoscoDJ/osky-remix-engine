@@ -19,6 +19,7 @@ class Policy:
     allow_loudness_tradeoff: bool = True
     profile_ladder: tuple[str, ...] = ("melodic_techno_club", "melodic_techno_dynamic", "streaming")
     limiting_threshold_db: float = 3.0       # reducción estimada (premaster→master) que justifica bajar
+    cut_before_tradeoff_db: float = 6.0      # recorte por sección que se intenta antes de ceder volumen
 
 
 DEFAULT = Policy()

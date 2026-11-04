@@ -71,3 +71,39 @@ intro/A/B/A/B/outro. Tests en `tests/audio/` (marcador `audio`).
 - La LRA es una aproximación (percentiles de sonoridad a 3 s), no el algoritmo EBU completo.
 - audio-separator no permite salida float: sus stems llegan en 16 bits.
 - Primera ejecución de RoFormer descarga el modelo (~600 MB) en `~/.cache/audio-separator-models`.
+
+## MIDI de referencia (`analysis/midi_ref.py`)
+
+```bash
+uv run osky-remix reference <proyecto> cancion.mid --analysis <sha> --stems <sha-separación>
+```
+
+Un MIDI de terceros (p. ej. karaoke) aporta armonía exacta, contramelodías (metales, cuerdas),
+bajo y letra sílaba por sílaba, pero no coincide con la grabación (otra introducción, tempo
+distinto, a veces compases extra). Se alinea en dos pasos:
+
+1. **DTW** sobre croma armónico (MIDI sin batería ni voz vs. stems bajo + otros) más actividad de
+   batería (golpes del MIDI vs. ataques del stem); la batería marca entradas de sección que la
+   armonía sola no distingue (intro y primer compás con el mismo acorde).
+2. **Anclas por beat**: cada negra del MIDI con batería se ancla al beat del audio más cercano a
+   donde la sitúa el DTW (< 0.35 beat); se completa 1 negra = 1 beat hacia atrás desde la primera
+   ancla y en huecos que cuadran exactamente.
+
+Verificación: golpes del MIDI vs. ataques del stem de batería, letra sobre actividad vocal y un
+**juez independiente**: qué fracción de la voz original (la melodía está en la grabación, la
+armonía en el MIDI) cae en notas de la armonía alineada, desplazando ±1/±2 tiempos. Si el máximo
+no está en 0 (o −1, por anticipación melódica), la confianza se reduce a la mitad.
+
+Ni la armonía (cambios cada 2 tiempos) ni la batería (bombo en 1 y 3) distinguen un corrimiento
+de 2 tiempos; por eso hace falta el juez. Resultados en "Tu Última Canción" (voz en la armonía):
+
+| Método | Desfase 0 | Máximo en |
+|---|---|---|
+| Solo DTW | 68.2 % | 0/−1 |
+| Ancla al beat más cercano | 68.4 % | 0 |
+| Voto por mayoría del desfase (descartado) | empeoró los coros (máximo en −2) | −2 |
+| Viterbi sobre desfases con costo armónico (descartado) | 64.3 % | −1/−2 |
+| **DTW con batería + anclas + completar (actual)** | **68.9 %** | **0** |
+
+El karaoke marca cada línea en su tiempo fuerte, no en el ataque: la anacrusa se mide en la
+energía del stem de voz ("Y será": 2.6 tiempos).

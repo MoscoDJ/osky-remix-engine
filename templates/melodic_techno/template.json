@@ -281,6 +281,35 @@
           }
         }
       ]
+    },
+    "chops": {
+      "gain_db": -3.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "echo",
+          "level_db": -4
+        },
+        {
+          "target": "verb",
+          "level_db": -8
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.3,
+            "release_ms": 120
+          }
+        }
+      ]
     }
   },
   "arrangements": {
@@ -447,6 +476,272 @@
         "lead": "vocal_melody",
         "fx": [
           "impact_start"
+        ]
+      }
+    ],
+    "144": [
+      {
+        "name": "intro",
+        "bars": 16,
+        "energy": 1,
+        "source": {
+          "lyric": "No veras"
+        },
+        "kick": true,
+        "drums": 1,
+        "bass": "sustained",
+        "pad": true,
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "chops": [
+          {
+            "lyric": "Solo tu cancion",
+            "occurrence": 3,
+            "at_bars": [
+              12
+            ]
+          }
+        ],
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 500,
+            "to": 4500
+          },
+          {
+            "track": "drums",
+            "fx": "highpass",
+            "param": "hz",
+            "from": 3000,
+            "to": 180,
+            "to_bar": 12
+          }
+        ]
+      },
+      {
+        "name": "verso",
+        "bars": 16,
+        "energy": 2,
+        "source": {
+          "lyric": "No veras"
+        },
+        "vocal": "phrase",
+        "vocal_bars": 15,
+        "kick": true,
+        "drums": 2,
+        "bass": "rolling",
+        "pad": true,
+        "arp": true,
+        "fx": [
+          "impact_start"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "arp",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 700,
+            "to": 6000
+          }
+        ]
+      },
+      {
+        "name": "pre",
+        "bars": 16,
+        "energy": 2,
+        "source": {
+          "lyric": "Y sera"
+        },
+        "vocal": "phrase",
+        "vocal_bars": 15,
+        "kick": true,
+        "drums": 2,
+        "bass": "rolling",
+        "arp": true,
+        "lead": "midi:brass",
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "arp",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 6000,
+            "to": 9000
+          }
+        ]
+      },
+      {
+        "name": "break",
+        "bars": 16,
+        "energy": 1,
+        "source": {
+          "lyric": "Crei ver",
+          "occurrence": 1
+        },
+        "vocal": "phrase",
+        "pad": true,
+        "arp": true,
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 4500,
+            "to": 1500,
+            "to_bar": 4
+          },
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 1500,
+            "to": 6000,
+            "from_bar": 8,
+            "to_bar": 16
+          }
+        ]
+      },
+      {
+        "name": "drop",
+        "bars": 16,
+        "energy": 3,
+        "source": {
+          "lyric": "Crei ver",
+          "occurrence": 1
+        },
+        "kick": true,
+        "drums": 3,
+        "bass": "rolling",
+        "arp": true,
+        "lead": "vocal_melody",
+        "fx": [
+          "impact_start"
+        ],
+        "chops": [
+          {
+            "lyric": "Solo tu cancion",
+            "occurrence": 1,
+            "at_bars": [
+              12
+            ]
+          }
+        ]
+      },
+      {
+        "name": "drop2",
+        "bars": 16,
+        "energy": 3,
+        "source": {
+          "at": "2:52"
+        },
+        "kick": true,
+        "drums": 3,
+        "bass": "rolling",
+        "arp": true,
+        "lead": "midi:brass",
+        "chops": [
+          {
+            "lyric": "Nada quedo",
+            "occurrence": 3,
+            "at_bars": [
+              4,
+              12
+            ]
+          }
+        ]
+      },
+      {
+        "name": "puente",
+        "bars": 16,
+        "energy": 2,
+        "source": {
+          "lyric": "Crei ver",
+          "occurrence": 2
+        },
+        "kick": true,
+        "drums": 1,
+        "bass": "sustained",
+        "pad": true,
+        "arp": true,
+        "fx": [
+          "riser_end"
+        ],
+        "fill": true,
+        "chops": [
+          {
+            "lyric": "Solo tu cancion",
+            "occurrence": 2,
+            "at_bars": [
+              6,
+              14
+            ]
+          }
+        ]
+      },
+      {
+        "name": "coro2",
+        "bars": 16,
+        "energy": 3,
+        "source": {
+          "lyric": "Crei ver",
+          "occurrence": 2
+        },
+        "vocal": "phrase",
+        "kick": true,
+        "drums": 3,
+        "bass": "rolling",
+        "pad": true,
+        "arp": true,
+        "fx": [
+          "impact_start"
+        ]
+      },
+      {
+        "name": "outro",
+        "bars": 16,
+        "energy": 1,
+        "source": {
+          "lyric": "Nada quedo",
+          "occurrence": 3
+        },
+        "vocal": "phrase",
+        "vocal_bars": 8,
+        "kick": true,
+        "kick_bars": 12,
+        "drums": 1,
+        "bass": "sustained",
+        "pad": true,
+        "chops": [
+          {
+            "lyric": "Solo tu cancion",
+            "occurrence": 3,
+            "at_bars": [
+              12
+            ]
+          }
+        ],
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 4500,
+            "to": 500,
+            "from_bar": 8,
+            "to_bar": 16
+          }
         ]
       }
     ]

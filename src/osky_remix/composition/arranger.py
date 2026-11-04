@@ -23,8 +23,9 @@ from .context import ComposeContext
 from .theory import BAR, TICKS_PER_BEAT, key_scale
 
 TEMPLATES = REPO_ROOT / "templates"
-TRACK_ORDER = ["kick", "drums", "bass", "pad", "arp", "lead", "fx", "vox"]
-DEFAULT_ENERGY = {"intro": 1, "break": 1, "outro": 1, "voz": 2, "build": 2, "drop": 3}
+TRACK_ORDER = ["kick", "drums", "bass", "pad", "arp", "lead", "fx", "vox", "chops"]
+DEFAULT_ENERGY = {"intro": 1, "break": 1, "outro": 1, "voz": 2, "verso": 2, "pre": 2, "puente": 2, "build": 2,
+                  "drop": 3, "drop2": 3, "coro2": 3}
 
 # Variantes de arreglo: mismas secciones (la voz no se mueve), distinto contenido.
 VARIANTS: dict[str, dict] = {
@@ -87,6 +88,13 @@ def sections_for(tpl: dict, bars: int, variant: str = "A") -> tuple[list[dict], 
     return secs, v
 
 
+def _ref_lead(ctx: ComposeContext, role: str, beat: int, nb: int, register: int) -> list:
+    """Notas de un canal del MIDI de referencia como lead: cuantizadas, monofónicas, en registro."""
+    raw = ctx.ref_notes(role, beat, nb)
+    secs = [(b1 * 60 / ctx.bpm, (b1 + d) * 60 / ctx.bpm, p) for b1, d, p, _ in raw]
+    return M.from_transcription(secs, ctx.bpm, nb * BAR, None, register)
+
+
 def generate_parts(tpl: dict, ctx: ComposeContext, bars: int, prefix: str = "", variant: str = "A") -> Parts:
     secs, v = sections_for(tpl, bars, variant)
     scale = key_scale(ctx.key)
@@ -94,15 +102,23 @@ def generate_parts(tpl: dict, ctx: ComposeContext, bars: int, prefix: str = "", 
     autom: list[dict] = []
     t0, vocal_bar = 0, 0
     seed0 = ctx.seed * 100 + v.get("seed_offset", 0)
+    chop_n = 0
     for si, s in enumerate(secs):
         nb, seed = s["bars"], seed0 + si
         L = nb * BAR
         name = s["name"]
-        hb_from = s.get("harmony_from", vocal_bar if s.get("vocal") else 0)
-        hb = ctx.halfbars(hb_from, nb)
+        if s.get("source"):
+            reg = ctx.region(s["source"])
+        else:
+            reg = ctx.region(None)
+            reg.beat = ctx.b0 + (vocal_bar * 4 if s.get("vocal") else 0)
+        s["_region"] = {"beat": reg.beat, "pickup_beats": round(reg.pickup_beats, 2), "label": reg.label}
+        hb = ctx.halfbars(0, nb, b0=reg.beat)
         if s.get("kick"):
             k = [n for n in D.section_drums(nb, 0, seed, with_fill=False, crash=False,
                                             no_kick_last_bar=s.get("no_kick_last_bar", False)) if n.pitch == D.KICK]
+            if s.get("kick_bars"):
+                k = [n for n in k if n.tick < s["kick_bars"] * BAR]
             clips.append(("kick", _clip(f"{prefix}kick-{name}", t0, L, k)))
         if s.get("drums") is not None:
             d = [n for n in D.section_drums(nb, s["drums"], seed, with_fill=s.get("fill", False)) if n.pitch != D.KICK]
@@ -119,15 +135,16 @@ def generate_parts(tpl: dict, ctx: ComposeContext, bars: int, prefix: str = "", 
             lo, hi = tpl["instruments"]["arp"].get("range", [62, 86])
             clips.append(("arp", _clip(f"{prefix}arp-{name}", t0, L, H.arp(hb, seed, lo, hi, v.get("arp_shape")))))
         if s.get("lead"):
-            reg = v.get("lead_register", tpl["instruments"]["lead"].get("register", 74))
+            reg_hi = v.get("lead_register", tpl["instruments"]["lead"].get("register", 74))
             notes = []
-            if s["lead"] == "vocal_melody" and ctx.melody:
-                spb = 60 / ctx.bpm
-                lo_s, hi_s = hb_from * 4 * spb, (hb_from + nb) * 4 * spb
-                sel = [(a - lo_s, b - lo_s, p) for a, b, p in ctx.melody if lo_s <= a < hi_s]
-                notes = M.from_transcription(sel, ctx.bpm, L, None, reg)
+            mode = s["lead"]
+            if mode == "vocal_melody":
+                mel = ctx.melody_for(reg.beat, nb)
+                notes = M.from_transcription([x for x in mel if x[0] < nb * 4 * 60 / ctx.bpm], ctx.bpm, L, None, reg_hi)
+            elif mode.startswith("midi:"):
+                notes = _ref_lead(ctx, mode.split(":", 1)[1], reg.beat, nb, reg_hi)
             if not notes:
-                notes = M.motif(hb, scale, seed, reg)
+                notes = M.motif(hb, scale, seed, reg_hi)
             clips.append(("lead", _clip(f"{prefix}lead-{name}", t0, L, notes)))
         fxn = []
         for f in s.get("fx", []):
@@ -137,17 +154,38 @@ def generate_parts(tpl: dict, ctx: ComposeContext, bars: int, prefix: str = "", 
                 fxn.append(D.MidiNote(tick=0, duration=BAR, pitch=2, velocity=110))
         if fxn:
             clips.append(("fx", _clip(f"{prefix}fx-{name}", t0, L, fxn)))
-        if s.get("vocal") == "phrase" and ctx.vocal is not None:
-            vs = ctx.vocal
-            pick_ticks = min(TICKS_PER_BEAT, t0)                     # anacrusa: hasta 1 tiempo antes
+        vs = ctx.vocal
+        if s.get("vocal") == "phrase" and vs is not None:
+            vbars = s.get("vocal_bars", nb)
+            pick_ticks = min(int(round(reg.pickup_beats * TICKS_PER_BEAT)), t0)    # anacrusa medida
             pick = int(round(pick_ticks / TICKS_PER_BEAT * vs.samples_per_beat))
-            off = vs.region_start + int(round(vocal_bar * 4 * vs.samples_per_beat)) - pick
-            length = int(round(nb * 4 * vs.samples_per_beat)) + pick
+            start = int(round(ctx.beats[reg.beat] / ctx.ratio))
+            off = start - pick
+            length = int(round(vbars * 4 * vs.samples_per_beat)) + pick
             if off >= 0 and off + length <= vs.frames:
                 clips.append(("vox", {"type": "audio", "id": f"{prefix}vox-{name}", "asset": vs.asset,
                                       "start_tick": t0 - pick_ticks, "source_offset": off,
                                       "source_length": length, "fade_in": int(0.01 * vs.sr), "fade_out": int(0.25 * vs.sr)}))
-            vocal_bar += nb
+            if not s.get("source"):
+                vocal_bar += nb
+        for ch in s.get("chops", []):
+            if vs is None or ctx.reference is None:
+                break
+            creg = ctx.region({"lyric": ch["lyric"], "occurrence": ch.get("occurrence", 1)})
+            from ..analysis.midi_ref import find_lyric
+            line = find_lyric(ctx.reference, ch["lyric"], ch.get("occurrence", 1))
+            start = int(round(ctx.beats[creg.beat] / ctx.ratio))
+            pick = int(round(creg.pickup_beats * vs.samples_per_beat))
+            end_s = (line.end + 0.35) / ctx.ratio * vs.sr                       # final de la línea + cola
+            length = int(min(end_s - (start - pick), ch.get("max_beats", 8) * vs.samples_per_beat + pick))
+            for at in ch.get("at_bars", [0]):
+                tick = t0 + at * BAR - int(round(creg.pickup_beats * TICKS_PER_BEAT))
+                if tick < 0 or start - pick < 0 or length <= 0:
+                    continue
+                chop_n += 1
+                clips.append(("chops", {"type": "audio", "id": f"{prefix}chop-{name}-{chop_n}", "asset": vs.asset,
+                                        "start_tick": tick, "source_offset": start - pick, "source_length": length,
+                                        "fade_in": int(0.005 * vs.sr), "fade_out": int(0.15 * vs.sr)}))
         for a in s.get("automation", []):
             autom.append({**a, "t1": t0 + a.get("from_bar", 0) * BAR, "t2": t0 + a.get("to_bar", nb) * BAR})
         t0 += L
@@ -182,7 +220,8 @@ def _marker_ops(secs: list[dict], prefix: str) -> list[dict]:
 
 
 def section_meta(secs: list[dict]) -> list[dict]:
-    return [{"name": s["name"], "bars": s["bars"], "energy": s.get("energy", 2), "vocal": bool(s.get("vocal"))} for s in secs]
+    return [{"name": s["name"], "bars": s["bars"], "energy": s.get("energy", 2), "vocal": bool(s.get("vocal")),
+             **({"region": s["_region"]} if "_region" in s else {})} for s in secs]
 
 
 def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], prefix: str = "",
@@ -192,7 +231,7 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
     tracks = [t for t in TRACK_ORDER if t in parts.used]
     ops: list[dict] = [{"op": "set_tempo", "points": [{"tick": 0, "bpm": ctx.bpm}]}, {"op": "set_key", "key": _short_key(ctx.key)}]
     for t in tracks:
-        kind = "audio" if t == "vox" else "instrument"
+        kind = "audio" if t in ("vox", "chops") else "instrument"
         ops.append({"op": "add_track", "id": t, "name": t.capitalize(), "kind": kind})
         if kind == "instrument":
             if t in ("kick", "drums"):

@@ -75,7 +75,8 @@ def vary_cmd(name: str, base: str = typer.Option(..., "--from", help="revisión 
     if not cm:
         _fail("la revisión base no tiene meta 'compose' (créala con 'compose')")
     tpl = load_template(cm.get("template", "melodic_techno"))
-    ctx, assets, _ = build_compose_context(repo, cm["analysis"], cm["vocals"], cm["at"], cm["bars"], cm["bpm"], cm["seed"])
+    ctx, assets, _ = build_compose_context(repo, cm["analysis"], cm["vocals"], cm["at"], cm["bars"], cm["bpm"], cm["seed"],
+                                           cm.get("reference"), cm.get("harmony", "auto"))
     rows = []
     for v in [x.strip() for x in variants.split(",") if x.strip()]:
         if v not in VARIANTS:

@@ -99,7 +99,7 @@ def evaluate(p: Project, renderer, master_audio: np.ndarray, quality: dict, poli
                                         {"section": s["name"], "deficit": deficit}))
     # 2) voz frente al resto en secciones con voz
     post = renderer.post
-    vox_ids = [t.id for t in p.tracks if t.kind == TrackKind.audio and t.id in post and t.id.startswith("vox")]
+    vox_ids = [t.id for t in p.tracks if t.kind == TrackKind.audio and t.id in post and t.id.startswith(("vox", "chops"))]
     others = [t.id for t in p.tracks if t.id in post and t.kind in (TrackKind.audio, TrackKind.instrument)
               and t.id not in vox_ids]
     if vox_ids:
@@ -121,7 +121,7 @@ def evaluate(p: Project, renderer, master_audio: np.ndarray, quality: dict, poli
             if r < lo or r > hi:
                 findings.append(Finding("vocal_level", 0.5 * (lo - r if r < lo else r - hi),
                                         f"voz {r:+.1f} LU frente al resto en 300 Hz-5 kHz (se busca {lo:+.0f}..{hi:+.0f})",
-                                        {"rel": r, "target": (lo + hi) / 2, "tracks": vox_ids}))
+                                        {"rel": r, "target": (lo + hi) / 2, "window": (lo, hi), "tracks": vox_ids}))
     # 3) bajo frente a bombo en la sección de más energía
     if "bass" in post and "kick" in post and secs:
         top = max(secs, key=lambda s: s["energy"])
@@ -132,7 +132,7 @@ def evaluate(p: Project, renderer, master_audio: np.ndarray, quality: dict, poli
         if r < lo or r > hi:
             findings.append(Finding("bass_balance", 0.3 * (lo - r if r < lo else r - hi),
                                     f"bajo {r:+.1f} LU frente al bombo en '{top['name']}' (se busca {lo:+.0f}..{hi:+.0f})",
-                                    {"rel": r, "target": (lo + hi) / 2}))
+                                    {"rel": r, "target": (lo + hi) / 2, "window": (lo, hi)}))
     # 4) calidad del master
     for c in quality.get("checks", []):
         if c["status"] == "FAIL":

@@ -27,6 +27,26 @@ Verificación de alineación (hito 1, "Tu Última Canción"): la proporción de 
 notas del acorde es máxima sin desfase (67 %) y cae al desfasar medio compás (58 %, 54 %) o uno
 completo (44 %, 31 %).
 
+### Regiones, cortes y ganchos (plantilla)
+
+Campos por sección, además de los básicos:
+
+| Campo | Efecto |
+|---|---|
+| `source: {"lyric": "Creí ver", "occurrence": 1}` | la sección toma armonía, voz y melodía de esa línea (MIDI de referencia); anacrusa medida en la voz |
+| `source: {"at": "2:52"}` | región por tiempo (tiempo fuerte más cercano) |
+| `vocal_bars` | compases de voz dentro de la sección (evita arrastrar la anacrusa de la frase siguiente) |
+| `lead: "midi:brass"` | el lead toca un canal del MIDI de referencia (aquí, la trompeta) en esa región |
+| `chops: [{"lyric": "Solo tu canción", "occurrence": 2, "at_bars": [6, 14]}]` | cortes de voz en la pista `chops` (eco y reverb por envío) |
+| `kick_bars` | el bombo se detiene tras N compases (outros) |
+
+`compose --reference <sha> --harmony auto|midi|audio`: con `auto`, la armonía viene del MIDI si la
+confianza de la referencia es ≥ 0.7, y del análisis del audio donde el MIDI no tiene acorde.
+
+El arreglo de 144 compases de `melodic_techno` (≈ 4:40) usa todo esto: intro, verso, pre (con la
+trompeta del original respondiendo), break con el coro, drop con la melodía del coro, drop2 con el
+solo de trompeta, puente con cortes, coro 2 y outro con "Nada quedó… solo tu canción".
+
 ## Renderizador (`audio/renderer.py`)
 
 | Elemento | Comportamiento |

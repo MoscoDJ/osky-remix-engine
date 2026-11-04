@@ -78,7 +78,10 @@ def track_gain_action(p: Project, ev: Evaluation, policy: Policy, code: str, tra
     t = next((x for x in p.tracks if x.id == track), None)
     if t is None or t.locked:
         return None
-    delta = _clamp(f.data["target"] - f.data["rel"], policy.max_gain_step_db)
+    # entrar al rango con 1 LU de margen (no al centro): cambiar lo mínimo necesario
+    lo, hi = f.data.get("window", (f.data["target"] - 1, f.data["target"] + 1))
+    goal = min(hi - 1.0, max(lo + 1.0, f.data["rel"]))
+    delta = _clamp(goal - f.data["rel"], policy.max_gain_step_db)
     new = round(t.gain_db + delta, 2)
     return Action(code, f"{track}: ganancia {t.gain_db:+.1f}→{new:+.1f} dB ({f.detail})",
                   [{"op": "set_track", "track": track, "gain_db": new}])
@@ -89,11 +92,12 @@ def plan_actions(p: Project, ev: Evaluation, policy: Policy = DEFAULT) -> tuple[
     acts, blocked = [], []
     a = energy_action(p, ev, policy)
     lane = next((x for x in p.automation if x.id == ENERGY_LANE), None)
-    cuts = [-pt.value for pt in lane.points] if lane else [0.0]
-    exhausted = a is None or max(cuts) >= policy.max_total_section_cut_db - 1e-6
-    h = headroom_action(p, ev, policy) if (exhausted or ev.metrics.get("limiting_db", 0) >= 2 * policy.limiting_threshold_db) else None
+    # orden: primero recortes por sección; ceder volumen (perfil menos fuerte) solo si ya hay
+    # recortes y aun así falta contraste (o se agotó el margen de recorte)
+    max_cut = max((-pt.value for pt in lane.points), default=0.0) if lane else 0.0
+    h = headroom_action(p, ev, policy) if (a is None or max_cut >= policy.cut_before_tradeoff_db) else None
     if h:
-        acts.append(h)                      # primero el margen; los recortes se reevalúan después
+        acts.append(h)
     elif a:
         acts.append(a)
     for code, track in (("vocal_level", "vox"), ("bass_balance", "bass")):

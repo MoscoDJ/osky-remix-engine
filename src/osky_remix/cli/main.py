@@ -1,7 +1,7 @@
 import typer
 
 from .agent import evaluate_cmd, improve_cmd, vary_cmd
-from .analyze import analyze, ingest, separate
+from .analyze import analyze, ingest, reference, separate
 from .doctor import doctor
 from .produce import compare, compose, export, graph, package_app, render
 from .project import asset_app, op_app, project_app, schema_app
@@ -12,6 +12,7 @@ app.command("doctor")(doctor)
 app.command("ingest")(ingest)
 app.command("separate")(separate)
 app.command("analyze")(analyze)
+app.command("reference")(reference)
 app.command("compose")(compose)
 app.command("render")(render)
 app.command("graph")(graph)
