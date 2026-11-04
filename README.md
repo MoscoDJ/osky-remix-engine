@@ -72,6 +72,16 @@ uv run osky-remix export mi-remix entrega/ --rev idea && uv run osky-remix packa
 
 Ver `docs/AUDIO_ENGINE.md`.
 
+### Abrir en un DAW (DAWproject)
+
+```bash
+uv run osky-remix dawproject mi-remix mi-remix.dawproject --rev idea   # --no-bounce: sin renders de instrumentos
+```
+
+Sesión para Bitwig Studio, Studio One o Cubase: pistas, buses, envíos, clips, notas, tempo,
+marcadores y automatización de volumen/paneo. Lo que no se puede traducir (efectos integrados,
+sidechain, mastering) queda listado en el manifiesto. Ver `docs/DAWPROJECT.md`.
+
 Los renders se guardan por revisión, perfil y entorno, así que se acumulan. Para limpiar lo
 que lleva tiempo sin usarse (todo es regenerable; los proyectos no se tocan):
 
@@ -109,6 +119,7 @@ uv run pytest -m ui             # interfaz con Playwright (requiere frontend com
 - `docs/AGENT.md` — evaluador, acciones, planificador, variaciones (hito 2)
 - `docs/CODEX_WORKFLOW.md` — cómo trabaja Claude con el motor
 - `docs/AUDIO_ENGINE.md` — composición, plantillas, renderizador, congelado y calibración
+- `docs/DAWPROJECT.md` — exportación a DAWproject: qué se traduce y qué no
 - `docs/ANALYSIS.md` — análisis, separación, confianza y verificación
 - `docs/PROJECT_SCHEMA.md` — modelo, unidades, operaciones y revisiones
 - `docs/COMPATIBILITY.md` — resultados del doctor, tolerancias y hallazgos

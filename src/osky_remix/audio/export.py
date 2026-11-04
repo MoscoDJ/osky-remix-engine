@@ -6,6 +6,7 @@
   presets/<pista>.fxp         plugins.json (manifiesto)      quality.json / quality.md
   project/project.json        project/assets/<sha>.<ext>     (todo lo referenciado)
   manifest.json               (sha256 de cada archivo)        README.md
+  daw/<proyecto>.dawproject   (DAWproject 1.0 con bounce de instrumentos)
 """
 from __future__ import annotations
 
@@ -106,6 +107,8 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
         for s in t.plugins:
             if s.preset and assets.find(s.preset):
                 shutil.copyfile(assets.find(s.preset), out / "presets" / f"{t.id}-{s.id}.fxp")
+    from .dawproject import export_dawproject
+    export_dawproject(p, assets, cache, out / "daw" / f"{p.name}.dawproject", bounce_instruments=True, revision=revision)
     (out / "plugins.json").write_text(json.dumps(plugin_manifest(p, rep), indent=2, ensure_ascii=False))
     (out / "quality.json").write_text(json.dumps(rep.quality, indent=2, ensure_ascii=False))
     q = rep.quality
@@ -126,6 +129,7 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
         "- `audio/master.wav`: master 24 bits. `audio/premaster.wav`: mezcla float sin masterizar.\n"
         "- `audio/stems/`: stems post-fader alineados (misma longitud, empiezan en 0).\n"
         "- `midi/arrangement.mid`: MIDI del arreglo (PPQ 960, mapa de tempo exacto).\n"
+        "- `daw/<proyecto>.dawproject`: sesión para Bitwig/Studio One/Cubase (ver docs/DAWPROJECT.md).\n"
         "- `plugins.json`: plugins, presets (SHA-256), parámetros, automatización y renders congelados.\n"
         "- `project/`: proyecto canónico y todos sus assets por SHA-256.\n\n"
         "Verificar integridad: `osky-remix package verify <carpeta>`\n")
