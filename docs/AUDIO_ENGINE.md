@@ -1,0 +1,51 @@
+# Motor de audio y producción (etapa 3)
+
+```bash
+uv run osky-remix compose <proyecto> --analysis <sha> --vocals <sha-stem> --at 1:23.1 --bars 32 \
+    [--template melodic_techno] [--bpm 124] [--seed 1] [--branch idea]
+uv run osky-remix render <proyecto> [--rev rama|id] [--profile club|streaming|dynamic]
+```
+
+## Composición (`composition/`)
+
+`compose` no toca el proyecto directamente: el arreglador produce un **lote de operaciones** del
+contrato (etapa 1) que se aplica de forma atómica en una revisión nueva (en la rama indicada).
+
+1. **Contexto** (`context.py`): del análisis toma el tiempo fuerte más cercano a `--at`, el tempo
+   del tramo, la tonalidad local y los acordes. Mapeo **1 tiempo del original = 1 tiempo del
+   remix**: la voz se estira ×(bpm destino / bpm origen) con Rubber Band (formantes conservados)
+   y la armonía del original, leída por beats, queda exactamente bajo la voz.
+2. **Melodía**: Basic Pitch transcribe la voz estirada (con filtro de armónicos) y el lead la toca
+   cuantizada a semicorcheas, monofónica, en el registro de la plantilla.
+3. **Generadores**: batería por intensidad (0-3) con redobles y crash; bajo rodante/contratiempo/
+   sostenido sobre la raíz por medio compás; pads con conducción de voces; arpegios; FX
+   (riser, impacto). Todo determinista por semilla.
+4. **Plantilla** (`templates/<género>/template.json`): presets, mezcla (ganancia, paneo, efectos,
+   sidechain) y arreglos por longitud (secciones con qué suena en cada una).
+
+Verificación de alineación (hito 1, "Tu Última Canción"): la proporción de la voz que cae en
+notas del acorde es máxima sin desfase (67 %) y cae al desfasar medio compás (58 %, 54 %) o uno
+completo (44 %, 31 %).
+
+## Renderizador (`audio/renderer.py`)
+
+| Elemento | Comportamiento |
+|---|---|
+| Clips de audio | desde el asset, offset/longitud en muestras, ganancia, fades; remuestreo si hace falta |
+| Instrumentos | primer plugin de la pista: Surge XT (DawDreamer) o integrado (`drums`, `fx`, `synth`) |
+| Efectos integrados | highpass, lowpass, eq, compressor, reverb, delay (en tiempos), chorus, gain, sidechain |
+| Enrutado | salidas a buses/master, envíos post-fader a retornos, sidechain desde otra pista |
+| Master | perfil de `mastering.dynamics` (LUFS objetivo + techo de true peak con lookahead) |
+| Salidas | premaster float32, master WAV 24 bits, stems post-fader float32, reporte JSON |
+
+**Congelado**: cada render de Surge se guarda en la caché con clave de contenido (notas, preset,
+parámetros, sr, longitud). La mayoría de los patches de fábrica son estocásticos; con el
+congelado, re-renderizar la misma revisión da audio idéntico bit a bit, y cambiar solo la mezcla
+no vuelve a sintetizar (24 s → 12 s en el hito 1).
+
+**Calibración**: muchos presets suenan una octava abajo de la nota MIDI. La primera vez que se usa
+un preset se mide su f0 con una nota de referencia y la transposición (múltiplo de 12) se
+compensa en el MIDI; se guarda en caché por SHA del preset.
+
+Pendiente para la etapa 4: automatización, grafo DSP explícito, retornos con efectos de usuario,
+comparación A/B, paquete reproducible de exportación.

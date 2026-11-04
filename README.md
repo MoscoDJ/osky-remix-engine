@@ -3,7 +3,7 @@
 Motor de producción de remixes headless, modular, no destructivo y reproducible, operado por
 Claude desde una CLI, con interfaz web local para supervisión (etapa 6).
 
-Estado: **etapas 0, 1 y 2 completas**. Ver `docs/ROADMAP.md`.
+Estado: **etapas 0 a 3 completas**; hito 1 (32 compases de melodic techno con voz extraída) cumplido. Ver `docs/ROADMAP.md`.
 
 ## Requisitos del sistema (Ubuntu / Kubuntu)
 
@@ -44,6 +44,16 @@ uv run osky-remix analyze mi-remix <sha> --stems <sha-reporte> --md analisis.md
 
 Métodos, confianza y verificación en `docs/ANALYSIS.md`.
 
+## Producción
+
+```bash
+uv run osky-remix project branch mi-remix idea --from main
+uv run osky-remix compose mi-remix --analysis <sha> --vocals <sha-voz> --at 1:23.1 --bars 32 --branch idea
+uv run osky-remix render mi-remix --rev idea
+```
+
+Ver `docs/AUDIO_ENGINE.md`.
+
 ## Pruebas
 
 ```bash
@@ -55,6 +65,7 @@ uv run pytest -m compat         # capacidades reales (lentas)
 ## Documentación
 
 - `docs/ARCHITECTURE.md` — separación de responsabilidades
+- `docs/AUDIO_ENGINE.md` — composición, plantillas, renderizador, congelado y calibración
 - `docs/ANALYSIS.md` — análisis, separación, confianza y verificación
 - `docs/PROJECT_SCHEMA.md` — modelo, unidades, operaciones y revisiones
 - `docs/COMPATIBILITY.md` — resultados del doctor, tolerancias y hallazgos

@@ -62,3 +62,7 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
     sin batería quedaban fuera de la rejilla; se extrapola la rejilla mientras haya audio.
 11. **Envolventes de ataque**: `aggregate=np.median` ignora el bombo (daba medio tempo) y el flujo
     espectral marca el ataque 20-40 ms tarde; se usa envolvente multibanda + derivada de energía.
+12. **Presets de Surge XT de fábrica** (sondeo de 26 candidatos, dos renders en procesos nuevos):
+    solo 5 son deterministas (Rubber Bass, Saw Lo-Fi, Fundament, Delay Dancer, Lo-Fi Pluck); el
+    resto difiere muestra a muestra → el renderizador congela cada pista en caché. 16 de 26
+    suenan una octava abajo de la nota MIDI → calibración automática por preset.
