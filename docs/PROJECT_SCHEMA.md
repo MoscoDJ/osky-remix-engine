@@ -38,7 +38,7 @@ ruteos circulares (salidas, envíos y sidechain).
 `add_track`, `remove_track`, `set_track`, `lock_track`, `unlock_track`, `add_send`, `remove_send`, `register_asset`,
 `add_clip`, `move_clip`, `delete_clip`, `set_clip_asset`, `transpose_midi`, `set_midi_notes`, `add_plugin`,
 `replace_plugin`, `remove_plugin`, `set_plugin_param`, `set_automation`, `delete_automation`,
-`set_tempo`, `set_meter`, `set_key`, `set_meta`, `set_master_profile`, `add_marker`, `remove_marker`.
+`set_tempo`, `insert_time`, `set_meter`, `set_key`, `set_meta`, `set_master_profile`, `add_marker`, `remove_marker`.
 
 `meta` guarda información no sonora: `compose` (cómo se compuso: análisis, voz, inicio, compases,
 tempo, semilla, plantilla) y `arrangement` (variante y secciones con su energía).
@@ -52,6 +52,8 @@ informa su índice y el proyecto no cambia.
 - Ninguna operación puede tocar una pista `locked` (clips, plugins, automatización, borrado).
 - Solo `--author user` puede desbloquear.
 - `set_tempo` se rechaza si hay pistas bloqueadas con clips (moverían su posición real).
+- `insert_time` es la excepción: desplaza todo, también las pistas bloqueadas, de forma rígida
+  (su postcondición verifica cada clip idéntico salvo `start_tick`). Ver `docs/DJ.md`.
 - `revert` de Claude se rechaza si alteraría una pista bloqueada.
 - `merge` reaplica operaciones: si alguna toca una pista bloqueada, es conflicto y no se escribe nada.
 

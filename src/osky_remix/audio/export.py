@@ -2,6 +2,7 @@
 
 <salida>/
   audio/master.wav (24 bits)  audio/premaster.wav (float)  audio/stems/*.wav (alineados, float)
+  dj/cues.xml  dj/cues.csv    (beatgrid y cues por sección, Rekordbox XML y CSV)
   midi/arrangement.mid        (un track por pista de instrumento, mapa de tempo exacto, PPQ 960)
   presets/<pista>.fxp         plugins.json (manifiesto)      quality.json / quality.md
   project/project.json        project/assets/<sha>.<ext>     (todo lo referenciado)
@@ -100,6 +101,9 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
     (a / "mix_premaster.wav").rename(a / "premaster.wav")
     (a / "mix_stems").rename(a / "stems")
     (a / "mix_report.json").rename(out / "render_report.json")
+    from ..dj.cues import write_cues                # beatgrid + cues para software de DJ
+    write_cues(p, out / "dj" / "cues.xml", "rekordbox", a / "master.wav")
+    write_cues(p, out / "dj" / "cues.csv", "csv")
     (out / "midi").mkdir()
     notes = write_midi(p, out / "midi" / "arrangement.mid")
     (out / "presets").mkdir()
@@ -130,6 +134,7 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
         "- `audio/stems/`: stems post-fader alineados (misma longitud, empiezan en 0).\n"
         "- `midi/arrangement.mid`: MIDI del arreglo (PPQ 960, mapa de tempo exacto).\n"
         "- `daw/<proyecto>.dawproject`: sesión para Bitwig/Studio One/Cubase (ver docs/DAWPROJECT.md).\n"
+        "- `dj/cues.xml`: beatgrid y cues por sección (Rekordbox XML); `dj/cues.csv`: la misma lista.\n"
         "- `plugins.json`: plugins, presets (SHA-256), parámetros, automatización y renders congelados.\n"
         "- `project/`: proyecto canónico y todos sus assets por SHA-256.\n\n"
         "Verificar integridad: `osky-remix package verify <carpeta>`\n")

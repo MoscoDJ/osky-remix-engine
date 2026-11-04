@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import Field
 
-from .models import (Asset, AudioClip, AutomationLane, Id, Marker, MeterPointM, MidiClip, MidiNote,
+from .models import (Asset, AudioClip, AutomationLane, AutomationPoint, Id, Marker, MeterPointM, MidiClip, MidiNote,
                      PluginSlot, Project, Send, Sha256, Strict, TempoPointM, Track, TrackKind)
 
 Author = Literal["user", "claude"]
@@ -493,6 +493,78 @@ class SetTempo(Op):
         p.tempo = [x.model_copy() for x in self.points]
 
 
+class InsertTime(Op):
+    """Inserta compases vacíos en ``at_tick``: todo lo que empieza ahí o después se desplaza.
+
+    Es "insertar tiempo" de un DAW: clips, automatización, marcadores, tempo y compás se mueven
+    en bloque y su sonido relativo no cambia. Por eso es la única operación que desplaza pistas
+    bloqueadas: las mueve rígidamente sin alterar su contenido (``verify`` lo comprueba). Se
+    rechaza si cortaría un clip o si no cae en un límite de compás.
+    """
+    op: Literal["insert_time"] = "insert_time"
+    at_tick: int = Field(ge=0)
+    ticks: int = Field(gt=0)
+
+    def _bar(self, p: Project) -> tuple[int, int]:
+        """(índice de compás en ``at_tick``, ticks por compás del tramo de compás vigente)."""
+        mm = p.meter_map()
+        bar, tick = 0, 0
+        while tick < self.at_tick:
+            pt = [m for m in mm.points if m.bar <= bar][-1]
+            tick += mm.ticks_per_bar(pt)
+            bar += 1
+        _require(tick == self.at_tick, f"insert_time: el tick {self.at_tick} no es inicio de compás")
+        return bar, mm.ticks_per_bar([m for m in mm.points if m.bar <= bar][-1])
+
+    def check(self, p, ctx):
+        _, tpb = self._bar(p)
+        _require(self.ticks % tpb == 0, f"insert_time: {self.ticks} ticks no son compases enteros ({tpb} por compás)")
+        tm = p.tempo_map()
+        for t in p.tracks:
+            for c in t.clips:
+                end = (tm.sample_to_tick(tm.tick_to_sample(c.start_tick) + p.audio_length(c))
+                       if isinstance(c, AudioClip) else c.start_tick + c.length_ticks)
+                _require(not c.start_tick < self.at_tick < end, f"insert_time cortaría el clip '{c.id}'")
+
+    def apply(self, p):
+        at, n = self.at_tick, self.ticks
+        bar, tpb = self._bar(p)
+        for t in p.tracks:
+            for c in t.clips:
+                if c.start_tick >= at:
+                    c.start_tick += n
+        for lane in p.automation:
+            pts = lane.points
+            before = [x for x in pts if x.tick < at]
+            after = [x.model_copy(update={"tick": x.tick + n}) for x in pts if x.tick >= at]
+            if before and after and pts[len(before)].tick > at:
+                a, b = before[-1], pts[len(before)]       # valor en ``at`` según la curva del tramo
+                v = a.value if a.curve == "hold" else a.value + (b.value - a.value) * (at - a.tick) / (b.tick - a.tick)
+                after = [AutomationPoint(tick=at, value=v, curve="hold"),
+                         AutomationPoint(tick=at + n, value=v, curve=a.curve)] + after
+            elif before and after:
+                after = [AutomationPoint(tick=at, value=after[0].value, curve="hold")] + after
+            lane.points = before + after
+        for m in p.markers:
+            if m.tick >= at:
+                m.tick += n
+        for tp in p.tempo:
+            if tp.tick > at:
+                tp.tick += n
+        for mp in p.meter:
+            if mp.bar > bar:
+                mp.bar += n // tpb
+
+    def verify(self, before, after):
+        for t0 in before.tracks:
+            t1 = after.track(t0.id)
+            _require([c.id for c in t0.clips] == [c.id for c in t1.clips], f"insert_time alteró los clips de '{t0.id}'")
+            for c0, c1 in zip(t0.clips, t1.clips):
+                moved = c0.model_copy(update={"start_tick": c0.start_tick + (self.ticks if c0.start_tick >= self.at_tick else 0)})
+                _require(moved == c1, f"insert_time alteró el contenido del clip '{c0.id}'")
+            _require(t0.model_dump(exclude={"clips"}) == t1.model_dump(exclude={"clips"}), f"insert_time alteró '{t0.id}'")
+
+
 class SetMeter(Op):
     op: Literal["set_meter"] = "set_meter"
     points: list[MeterPointM] = Field(min_length=1)
@@ -566,6 +638,6 @@ class RemoveMarker(Op):
 Operation = Annotated[
     Union[AddTrack, RemoveTrack, SetTrack, LockTrack, UnlockTrack, AddSend, RemoveSend, RegisterAsset, AddClip, MoveClip,
           DeleteClip, SetClipAsset, TransposeMidi, SetMidiNotes, AddPlugin, ReplacePlugin, RemovePlugin, SetPluginParam,
-          SetAutomation, DeleteAutomation, SetTempo, SetMeter, SetKey, SetMeta, SetMasterProfile, AddMarker, RemoveMarker],
+          SetAutomation, DeleteAutomation, SetTempo, InsertTime, SetMeter, SetKey, SetMeta, SetMasterProfile, AddMarker, RemoveMarker],
     Field(discriminator="op"),
 ]
