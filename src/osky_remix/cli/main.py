@@ -2,6 +2,7 @@ import typer
 
 from .agent import evaluate_cmd, improve_cmd, vary_cmd
 from .analyze import analyze, ingest, reference, separate
+from .dawproject import dawproject_cmd
 from .doctor import doctor
 from .match import match_cmd
 from .produce import compare, compose, export, graph, package_app, render
@@ -21,6 +22,7 @@ app.command("graph")(graph)
 app.command("compare")(compare)
 app.command("export")(export)
 app.command("transpose")(transpose)
+app.command("dawproject")(dawproject_cmd)
 app.add_typer(package_app, name="package")
 app.command("evaluate")(evaluate_cmd)
 app.command("improve")(improve_cmd)

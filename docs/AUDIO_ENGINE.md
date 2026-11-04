@@ -93,6 +93,8 @@ uv run osky-remix package verify <carpeta>
 
 Esquemas: `schemas/render.schema.json` describe el reporte de render.
 
+Sesión editable para un DAW: `osky-remix dawproject` (también `daw/` en el paquete), ver `docs/DAWPROJECT.md`.
+
 
 ## Semántica de audio y entregas (2026-11-04)
 

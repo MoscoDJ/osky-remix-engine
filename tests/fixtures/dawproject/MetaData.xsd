@@ -1,0 +1,26 @@
+<?xml version="1.0" standalone="yes"?>
+<!-- Esquema oficial de DAWproject 1.0: https://github.com/bitwig/dawproject (rama main, 2026-11-04).
+     Copyright (c) 2020 Bitwig, licencia MIT. Copia sin cambios para validar la exportación. -->
+<xs:schema version="1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:element name="MetaData" type="metaData"/>
+
+  <xs:complexType name="metaData">
+    <xs:sequence>
+      <xs:element name="Title" type="xs:string" minOccurs="0"/>
+      <xs:element name="Artist" type="xs:string" minOccurs="0"/>
+      <xs:element name="Album" type="xs:string" minOccurs="0"/>
+      <xs:element name="OriginalArtist" type="xs:string" minOccurs="0"/>
+      <xs:element name="Composer" type="xs:string" minOccurs="0"/>
+      <xs:element name="Songwriter" type="xs:string" minOccurs="0"/>
+      <xs:element name="Producer" type="xs:string" minOccurs="0"/>
+      <xs:element name="Arranger" type="xs:string" minOccurs="0"/>
+      <xs:element name="Year" type="xs:string" minOccurs="0"/>
+      <xs:element name="Genre" type="xs:string" minOccurs="0"/>
+      <xs:element name="Copyright" type="xs:string" minOccurs="0"/>
+      <xs:element name="Website" type="xs:string" minOccurs="0"/>
+      <xs:element name="Comment" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
+
