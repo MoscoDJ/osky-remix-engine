@@ -4,7 +4,7 @@
   audio/master.wav (24 bits)  audio/premaster.wav (float)  audio/stems/*.wav (alineados, float)
   dj/cues.xml  dj/cues.csv    (beatgrid y cues por sección, Rekordbox XML y CSV)
   midi/arrangement.mid        (un track por pista de instrumento, mapa de tempo exacto, PPQ 960)
-  presets/<pista>.fxp         plugins.json (manifiesto)      quality.json / quality.md
+  presets/<pista>.*           plugins.json (manifiesto)      quality.json / quality.md
   project/project.json        project/assets/<sha>.<ext>     (todo lo referenciado)
   manifest.json               (sha256 de cada archivo)        README.md
   daw/<proyecto>.dawproject   (DAWproject 1.0 con bounce de instrumentos)
@@ -109,8 +109,10 @@ def export_package(p: Project, assets, cache, out: Path, profile: str = "club", 
     (out / "presets").mkdir()
     for t in p.tracks:
         for s in t.plugins:
-            if s.preset and assets.find(s.preset):
-                shutil.copyfile(assets.find(s.preset), out / "presets" / f"{t.id}-{s.id}.fxp")
+            src = assets.find(s.preset) if s.preset else None
+            if src:
+                # la extensión del asset: .fxp para Surge, .json para un kit del sampler
+                shutil.copyfile(src, out / "presets" / f"{t.id}-{s.id}{Path(src).suffix or '.bin'}")
     from .dawproject import export_dawproject
     export_dawproject(p, assets, cache, out / "daw" / f"{p.name}.dawproject", bounce_instruments=True, revision=revision)
     (out / "plugins.json").write_text(json.dumps(plugin_manifest(p, rep), indent=2, ensure_ascii=False))
