@@ -5,6 +5,19 @@ jobs:
     runs-on: [self-hosted, linux, osky-audio]
     steps:
       - uses: actions/checkout@v4
+      # El runner corre como servicio y no carga ~/.bashrc: sin esto no ve uv (~/.local/bin)
+      # ni demucs/audio-separator, cuyos shims viven fuera de ~/.local/bin (UV_TOOL_BIN_DIR,
+      # por defecto ~/.local/uv-bin) para que Syncthing no reparta enlaces rotos.
+      - name: Herramientas de uv en el PATH
+        run: |
+          echo "${UV_TOOL_BIN_DIR:-$HOME/.local/uv-bin}" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Verificar herramientas
+        run: |
+          for tool in uv demucs ffmpeg rubberband; do
+            command -v "$tool" >/dev/null || { echo "::error::falta $tool en el PATH del runner ($PATH)"; exit 1; }
+          done
+          command -v audio-separator >/dev/null || echo "::warning::audio-separator no instalado (RoFormer es opcional)"
       - run: uv sync --frozen
       - run: ./scripts/check_compatibility.sh
       - uses: actions/upload-artifact@v4
