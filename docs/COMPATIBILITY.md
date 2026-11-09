@@ -73,6 +73,34 @@ con código 0 no basta. Reporte JSON en `workspace/reports/`.
     diera). v2: lookahead de 5 ms + release exponencial por bloques, misma garantía de techo.
 15. **Compatibilidad mono**: medirla contra un canal (L+R)/2 da siempre -3 dB; se compara contra la
     mezcla mono duplicada en ambos canales.
+16. **Presets de Surge de usuario** (sondeo de 142 de 4 packs, 2026-11-08): 141 suenan; uno
+    (Damon Armani V2 `Pluck/ModernBell.fxp`) deja a DawDreamer bloqueado sin consumir CPU al
+    renderizar; se excluye. Solo 7 son deterministas (todo se congela en caché, ver 12). Varios
+    calibran a transposiciones que no son octavas (−5, −7, −17, −19 st): tocan una quinta u otro
+    intervalo sobre cada nota y en un arreglo armónico desafinan; el renderer solo compensa
+    octavas y avisa, así que no se usan para pads ni bajos. Los packs de secuencias (PSY-LION,
+    Phasor `Sequences/`) tienen secuenciador interno y chocan con el MIDI generado.
+17. **Categorías de la biblioteca contra las etiquetas del productor** (1 582 samples de 3
+    packs comerciales, nombre de archivo como verdad): bombos 16/16 y hats 24/26 correctos;
+    clap y snare se confunden (5/11 claps como snare), y 7 de 17 risers cortos salen como clap
+    (ruido con ataque). Para elegir sonidos se usa la etiqueta del nombre más los rasgos
+    medidos; la categoría inferida queda como respaldo para samples sin nombre descriptivo.
+18. **`LadderFilter` de pedalboard no es lineal** (corrige el alcance del hallazgo 13): satura la
+    entrada y la realimentación con `tanh` aun con `drive = 1`. Seno de 200 Hz por el paso alto
+    de 35 Hz: THD −45 dB a −12 dBFS, −34 dB a −6 dBFS, −23 dB a 0 dBFS y −15 dB a +6 dBFS, con
+    compresión de 0.5 dB a 0 dBFS. Todos los filtros del motor (paso alto de la voz a 140 Hz, del
+    bajo, barridos del pad y el arpegio) coloreaban según el nivel de la pista, y un trim antes
+    del filtro cambiaba el timbre (lo destapó `sounds apply`: un bajo con +9.6 dB de trim).
+    `audio.ladder` reproduce la topología de JUCE con la no linealidad sustituida por la
+    identidad: a −60 dBFS el error frente al original es < −55 dB en los cuatro modos (misma
+    respuesta en frecuencia, incluida la meseta lejos del corte por el cero en −0.3) y a cualquier
+    nivel es lineal (THD < −90 dB). Recurrencia muestra a muestra con numba (~6 ms por 4 s
+    estéreo), frecuencia y resonancia automatizables por muestra. `RENDER_VERSION` 3.2.0; la
+    caché de Surge conserva su versión (su audio no depende de los efectos).
+19. **El limitador crea DC con bombos asimétricos**: el premaster de un juego de sonidos tenía
+    −0.00009 de DC y el master −0.00145 (aviso de calidad). El limitador atenúa más los picos del
+    lado alto del bombo de sample. Bloqueo de DC (paso alto de 1.er orden a 5 Hz, fase cero)
+    después del limitador y dentro del bucle que verifica el true peak.
 
 
 ## Verificación de correcciones, 2026-11-04

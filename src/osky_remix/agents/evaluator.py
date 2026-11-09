@@ -151,6 +151,9 @@ def evaluate(p: Project, renderer, master_audio: np.ndarray, quality: dict, poli
     # reducción de picos estimada: pico de cresta del premaster normalizado vs. techo del master
     if quality.get("limiting_gain_reduction_db_est") is not None and pm is not None:
         metrics["limiting_db"] = round(_limiting_estimate(renderer), 2)
+    # pico de entrada de los buses (antes de sus efectos): referencia estable para el clipper
+    metrics["bus_input_peak_dbfs"] = {t.id: round(float(20 * np.log10(np.abs(renderer.dry[t.id]).max() + 1e-12)), 2)
+                                      for t in p.tracks if t.kind.value == "bus" and t.id in renderer.dry}
     return Evaluation(score=round(sum(f.severity for f in findings), 3), findings=findings, metrics=metrics)
 
 

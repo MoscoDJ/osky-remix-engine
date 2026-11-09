@@ -263,8 +263,10 @@ def _record_ownership(ops, previous=None):
 
 
 def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], prefix: str = "",
-            variant: str = "A", compose_meta: dict | None = None) -> Plan:
-    """``presets``: rol -> sha del .fxp ya registrado (o ausente para usar el integrado)."""
+            variant: str = "A", compose_meta: dict | None = None,
+            preset_params: dict[str, dict] | None = None) -> Plan:
+    """``presets``: rol -> sha ya registrado: .fxp para los sintes, kit de samples para kick, drums
+    y fx (ausente: instrumento integrado). ``preset_params``: parámetros estáticos de Surge por rol."""
     parts = generate_parts(tpl, ctx, bars, prefix, variant)
     tracks = [t for t in TRACK_ORDER if t in parts.used]
     ops: list[dict] = [{"op": "set_tempo", "points": [{"tick": 0, "bpm": ctx.bpm}]}, {"op": "set_key", "key": _short_key(ctx.key)}]
@@ -272,12 +274,14 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
         kind = "audio" if t in ("vox", "chops") else "instrument"
         ops.append({"op": "add_track", "id": t, "name": t.capitalize(), "kind": kind})
         if kind == "instrument":
-            if t in ("kick", "drums"):
-                inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "drums"}
-            elif t == "fx":
-                inst = {"id": "fx-inst", "backend": "builtin", "uri": "fx"}
+            if t in ("kick", "drums", "fx"):
+                inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "fx" if t == "fx" else "drums"}
+                if t in presets:
+                    inst["preset"] = presets[t]                      # kit de samples (samples.kit)
             elif t in presets:
                 inst = {"id": f"{t}-inst", "backend": "surge_xt", "uri": "Surge XT.vst3", "preset": presets[t]}
+                if (preset_params or {}).get(t):
+                    inst["params"] = preset_params[t]
             else:
                 inst = {"id": f"{t}-inst", "backend": "builtin", "uri": "synth"}
             ops.append({"op": "add_plugin", "track": t, "plugin": inst})

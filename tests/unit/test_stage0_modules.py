@@ -62,3 +62,24 @@ def test_harmonic_ghost_filter():
     assert not is_harmonic_ghost(loud_octave, notes)
     assert not is_harmonic_ghost(later, notes)
     assert not is_harmonic_ghost(real, notes)
+
+
+def test_master_removes_dc_created_by_limiting_asymmetric_kick():
+    """Bombo asimétrico (picos + al doble que los −) limitado ~10 dB: sin bloqueo el limitador
+    deja DC; con él, |media| < 1e-4 y el techo de true peak se respeta."""
+    import numpy as np
+    from osky_remix.mastering.dynamics import MasterProfile, limit, master
+    from osky_remix.mastering.true_peak import true_peak_dbtp
+    sr = 44100
+    t = np.arange(int(0.484 * sr)) / sr
+    hit = np.sin(2 * np.pi * np.cumsum(50 + 150 * np.exp(-t * 30)) / sr) * np.exp(-t * 7)
+    hit = np.where(hit > 0, hit, 0.45 * hit)                                  # asimétrico
+    pad = 0.05 * np.sin(2 * np.pi * 220 * np.arange(len(hit)) / sr)
+    x = np.tile(hit + pad, 24)
+    x = np.stack([x - x.mean(), x - x.mean()], 1) * 0.5                        # entrada sin DC
+    raw = limit(x * 10 ** (12 / 20), sr, -1.1)
+    assert abs(raw.mean()) > 5e-4                                              # el limitador crea DC
+    prof = MasterProfile(name="t", target_lufs=-9.0, ceiling_dbtp=-1.0)
+    r = master(x, sr, prof)
+    assert abs(r.audio.mean(0)).max() < 1e-4
+    assert true_peak_dbtp(r.audio, sr) <= -1.0 + 1e-3

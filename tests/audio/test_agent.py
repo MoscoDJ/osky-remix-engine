@@ -165,3 +165,106 @@ def test_legacy_project_is_preserved_unless_adopted():
     r = apply_ops(r, parse_ops([{'op': 'move_clip', 'clip': clip.id, 'start_tick': clip.start_tick + 120}]), U)
     again = apply_ops(r, parse_ops(rearrange(r, tpl, _ctx(), 32, 'C', 'c-').ops), Context(author='claude'))
     assert again.track('arp') == r.track('arp')
+
+def test_arrange_assigns_kits_and_surge_params():
+    """Kits de samples en kick/drums/fx y parámetros estáticos de Surge desde el juego de sonidos."""
+    from tests.unit.test_composition import _ctx
+    tpl = load_template("melodic_techno")
+    k, f, b = "1" * 64, "2" * 64, "3" * 64
+    ops = arrange(tpl, _ctx(), 32, {"kick": k, "fx": f, "bass": b}, preset_params={"bass": {"Volume": 0.4}}).ops
+    plug = {o["track"]: o["plugin"] for o in ops if o["op"] == "add_plugin" and o["plugin"]["id"].endswith("-inst")}
+    assert plug["kick"] == {"id": "kick-inst", "backend": "builtin", "uri": "drums", "preset": k}
+    assert plug["fx"]["uri"] == "fx" and plug["fx"]["preset"] == f
+    assert "preset" not in plug["drums"]
+    assert plug["bass"]["backend"] == "surge_xt" and plug["bass"]["params"] == {"Volume": 0.4}
+
+
+def test_drum_clip_comes_before_loudness_tradeoff():
+    """Con recortes por sección agotados y el limitador trabajando: primero el clipper del bus de
+    batería (2 dB por paso, máximo 6 dB); solo entonces se cede volumen."""
+    from osky_remix.agents.actions import DRUM_CLIP_ID
+    from osky_remix.agents.evaluator import Evaluation, Finding
+    from tests.unit.test_composition import _ctx
+    tpl = load_template("melodic_techno")
+    p = apply_ops(Project(name="c", sample_rate=44100), parse_ops(arrange(tpl, _ctx(), 32, {}).ops), U)
+    secs = [m for m in p.meta.get("sections", [])] or [{"name": "intro", "tick": 0}]
+    lane = {"op": "set_automation", "lane": {"id": ENERGY_LANE, "track": "master", "target": "gain_db",
+                                               "points": [{"tick": 0, "value": -7.0, "curve": "hold"}]}}
+    p = apply_ops(p, parse_ops([lane]), Context(author="claude"))
+    ev = Evaluation(3.0, [Finding("energy_contrast", 1.0, "falta contraste", {"section": "intro", "deficit": 1.0})],
+                    {"limiting_db": 9.0, "bus_input_peak_dbfs": {"drumbus": 1.5}})
+    shaves = []
+    for _ in range(4):
+        acts, _ = plan_actions(p, ev)
+        if acts[0].name != "drum_clip":
+            break
+        p = apply_ops(p, parse_ops(acts[0].ops), Context(author="claude"))
+        slot = next(s for s in p.track("drumbus").plugins if s.id == DRUM_CLIP_ID)
+        assert p.track("drumbus").plugins[0].id == DRUM_CLIP_ID                # antes del compresor
+        shaves.append((slot.params["shave_db"], slot.params["ceiling_db"]))
+    assert shaves == [(2.0, -0.5), (4.0, -2.5), (6.0, -4.5)]
+    assert acts[0].name == "loudness_tradeoff"
+    # bus bloqueado: no se recorta, se pasa directo al intercambio de volumen
+    q = apply_ops(apply_ops(Project(name="c", sample_rate=44100), parse_ops(arrange(tpl, _ctx(), 32, {}).ops), U),
+                  parse_ops([lane]), Context(author="claude"))
+    q = apply_ops(q, parse_ops([{"op": "lock_track", "track": "drumbus"}]), U)
+    assert plan_actions(q, ev)[0][0].name == "loudness_tradeoff"
+
+
+def _lane(points):
+    return {"op": "set_automation", "lane": {"id": ENERGY_LANE, "track": "master", "target": "gain_db",
+                                              "points": [{"tick": t, "value": v, "curve": "hold"} for t, v in points]}}
+
+
+def test_energy_family_order_uses_cuts_of_deficient_sections():
+    """El intro ya lleva -7 dB, pero la sección con déficit (voz) solo -2: se recorta antes de ceder."""
+    from osky_remix.agents.evaluator import Evaluation, Finding
+    pol = replace(DEFAULT, profile_ladder=("dynamic", "streaming"))
+    p = apply_ops(flat_project(), parse_ops([_lane([(0, -7.0), (4 * BAR, -2.0), (8 * BAR, 0.0)])]), U)
+    ev = Evaluation(2.0, [Finding("energy_contrast", 1.0, "voz plana", {"section": "voz", "deficit": 1.0})],
+                    {"limiting_db": 9.0, "bus_input_peak_dbfs": {}})
+    assert plan_actions(p, ev, pol)[0][0].name == "energy_contrast"
+    p2 = apply_ops(flat_project(), parse_ops([_lane([(0, -7.0), (4 * BAR, -6.5), (8 * BAR, 0.0)])]), U)
+    assert plan_actions(p2, ev, pol)[0][0].name == "loudness_tradeoff"      # sin bus de batería: no hay clipper
+    # exclusión: la siguiente alternativa es seguir recortando la sección
+    assert plan_actions(p2, ev, pol, exclude=frozenset({"loudness_tradeoff"}))[0][0].name == "energy_contrast"
+
+
+def test_planner_tries_next_alternative_when_first_does_not_improve(agent_repo, monkeypatch):
+    """Evaluación simulada: ceder volumen empeora y recortar la sección mejora. El planificador,
+    tras descartar lo primero, prueba lo segundo en la misma iteración y confirma solo eso."""
+    from osky_remix.agents import planner
+    from osky_remix.agents.evaluator import Evaluation, Finding
+    agent_repo.commit([_lane([(0, -7.0), (4 * BAR, -6.5), (8 * BAR, 0.0)])], "claude", "cortes previos")
+    finding = [Finding("energy_contrast", 2.0, "voz plana", {"section": "voz", "deficit": 1.0})]
+
+    def fake_assess(p, repo, policy=DEFAULT, profile=None):
+        if p.master_profile != "dynamic":
+            return Evaluation(3.0, finding, {"limiting_db": 9.0, "bus_input_peak_dbfs": {}})
+        lane = next(a for a in p.automation if a.id == ENERGY_LANE)
+        cut = -next(pt.value for pt in lane.points if pt.tick == 4 * BAR)
+        score = max(0.0, 2.0 - (cut - 6.5))
+        return Evaluation(score, finding if score else [], {"limiting_db": 9.0, "bus_input_peak_dbfs": {}})
+    monkeypatch.setattr(planner, "assess", fake_assess)
+    pol = replace(DEFAULT, profile_ladder=("dynamic", "streaming"))
+    n0 = len(agent_repo.log("main", 50))
+    res = improve(agent_repo, "main", pol, log=lambda *_: None)
+    kinds = [("tradeoff" if "perfil" in s.actions[0] else "corte", s.accepted) for s in res.steps]
+    assert kinds[:2] == [("tradeoff", False), ("corte", True)]            # misma iteración: alternativa
+    assert all(s.iteration == 1 for s in res.steps[:2])
+    final = agent_repo.load()
+    assert final.master_profile == "dynamic"                               # el descartado no dejó rastro
+    assert len(agent_repo.log("main", 50)) - n0 == sum(s.accepted for s in res.steps)
+
+
+def test_loudness_tradeoff_needs_clear_improvement(agent_repo, monkeypatch):
+    """Ceder volumen para borrar un residuo pequeño (0.30) no compensa: se descarta."""
+    from osky_remix.agents import planner
+    from osky_remix.agents.evaluator import Evaluation, Finding
+    agent_repo.commit([_lane([(0, -9.0), (4 * BAR, -9.0), (8 * BAR, 0.0)])], "claude", "cortes al máximo")
+    finding = [Finding("energy_contrast", 0.3, "voz casi bien", {"section": "voz", "deficit": 0.2})]
+    monkeypatch.setattr(planner, "assess", lambda p, *a, **k: Evaluation(
+        0.0 if p.master_profile != "dynamic" else 0.3, [] if p.master_profile != "dynamic" else finding,
+        {"limiting_db": 9.0, "bus_input_peak_dbfs": {}}))
+    res = improve(agent_repo, "main", replace(DEFAULT, profile_ladder=("dynamic", "streaming")), log=lambda *_: None)
+    assert not any(s.accepted for s in res.steps) and agent_repo.load().master_profile == "dynamic"

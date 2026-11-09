@@ -282,3 +282,34 @@ def test_feeder_reaches_only_the_soloed_return(tmp_path, repo):
     r.output("master")
     # dly es audible (recibe al retorno en solo), pero el envío directo de la voz a dly calla
     assert np.allclose(r.output("dly"), r.output("rev"), atol=1e-6)
+
+# ------------------------------------------------------------------------------- clipper suave
+def test_soft_clip_linear_below_knee_and_bounded():
+    from osky_remix.audio.effects import soft_clip
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([0.2 * np.sin(2 * np.pi * 100 * t)] * 2, 1).astype(np.float32)
+    assert np.array_equal(soft_clip(x, -6.0, 0.5), x)                          # 0.2 < 0.5·0.501: bit-exacto
+    loud = np.stack([1.5 * np.sin(2 * np.pi * 100 * t)] * 2, 1)
+    y = soft_clip(loud, -6.0, 0.5)
+    ceil = 10 ** (-6 / 20)
+    assert np.abs(y).max() <= ceil * 10 ** (0.3 / 20)                           # techo (+0.3 dB de filtro)
+    assert np.abs(y).max() >= ceil * 0.97
+    small = np.abs(loud[:, 0]) < 0.45 * ceil                                    # zona lineal intacta
+    assert np.max(np.abs(y[small, 0] - loud[small, 0])) < 2e-3
+
+
+def test_soft_clip_oversampling_reduces_aliasing():
+    """Seno de 7 kHz recortado fuerte: sin sobremuestreo los armónicos 3.º y 5.º (21 y 35 kHz) se
+    reflejan en 23.1 y 9.1 kHz; con 4x quedan muy por debajo."""
+    from osky_remix.audio.effects import soft_clip
+    sr = 44100
+    t = np.arange(sr) / sr
+    x = np.stack([2.0 * np.sin(2 * np.pi * 7000 * t)] * 2, 1)
+    def alias_db(y):
+        spec = np.abs(np.fft.rfft(y[:, 0] * np.hanning(len(y)))) ** 2
+        f = np.fft.rfftfreq(len(y), 1 / sr)
+        alias = spec[(np.abs(f - 9100) < 200)].sum()                            # 5.º armónico reflejado
+        return 10 * np.log10(alias / spec[np.abs(f - 7000) < 200].sum())
+    assert alias_db(soft_clip(x, -1.0, 0.3, oversample=1)) > -40
+    assert alias_db(soft_clip(x, -1.0, 0.3, oversample=4)) < alias_db(soft_clip(x, -1.0, 0.3, oversample=1)) - 20

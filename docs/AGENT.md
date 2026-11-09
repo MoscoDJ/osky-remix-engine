@@ -32,9 +32,25 @@ sonoridad pero no la tapan); por eso se mide en la banda donde compiten.
 
 - `energy_contrast`: carril `auto-master-energy` de ganancia por sección en el master, antes del
   mastering. Solo recorta (no empuja el limitador); máx. 4 dB por iteración y 9 dB acumulados.
+- `drum_clip`: si falta contraste y el limitador quita ≥ 3 dB de cresta, recorte suave
+  (`clipper`, lineal hasta media altura, `tanh` encima, sobremuestreo 4x) al inicio del bus de
+  batería: 2 dB de pico por iteración, hasta 6 dB, con el techo relativo al pico de entrada medido
+  del bus. Los bombos de sample tienen mucha más cresta que el integrado (que ya satura) y son
+  los que obligan al limitador del master a trabajar.
 - `loudness_tradeoff`: si falta contraste y el limitador quita ≥ 3 dB de cresta, baja un peldaño
-  en la escalera de perfiles (`melodic_techno_club` → `melodic_techno_dynamic` → `streaming`).
-  Cambia volumen por dinámica; se puede desactivar (`allow_loudness_tradeoff`).
+  en la escalera de perfiles (`melodic_techno_club` → `melodic_techno_dynamic`). `streaming`
+  (−14 LUFS) quedó fuera: es una decisión de entrega, no de mezcla (las plataformas normalizan),
+  y un juego de sonidos (MT3) terminaba 4 LU más bajo que los demás; se pide al exportar.
+  Cambia volumen por dinámica; se puede desactivar (`allow_loudness_tradeoff`). Exige una
+  mejora de puntaje ≥ 1.0 (`tradeoff_min_improvement`): con MT3 el agente bajó a `streaming`
+  (−14 LUFS) para borrar un residuo de 0.30.
+- Orden de la familia de energía (una por iteración): recortar las secciones con déficit
+  mientras alguna de ellas lleve menos de `cut_before_tradeoff_db` (6 dB); después `drum_clip`,
+  `loudness_tradeoff` y, por último, seguir recortando hasta 9 dB. El criterio mira los recortes
+  de las secciones *con déficit*: con el máximo de cualquier sección (un intro a −7 dB) el agente
+  cedía volumen mientras las secciones planas aún tenían margen.
+- Alternativas: si la propuesta no mejora, se descarta sin rastro y, si incluía una acción de la
+  familia de energía, se prueba la siguiente en la misma iteración (`max_alternatives` = 2).
 - `vocal_level` / `bass_balance`: ganancia de la pista, máx. 4 dB por iteración.
 - `masking` (voz): campana del EQ integrado (`eq`, Q √2) en el enmascarador, en el centro de la
   banda en conflicto (slot `auto-unmask-<banda>`); máx. 3 dB por iteración y 9 dB acumulados.

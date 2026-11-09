@@ -124,6 +124,7 @@ def compose(name: str,
             variant: str = typer.Option("A", "--variant"),
             reference: Optional[str] = typer.Option(None, "--reference", help="sha del MIDI de referencia alineado"),
             harmony: str = typer.Option("auto", "--harmony", help="auto | midi | audio"),
+            sounds: Optional[str] = typer.Option(None, "--sounds", help="juego de sonidos (workspace/sounds/<nombre>.json)"),
             branch: Optional[str] = typer.Option(None, "--branch"),
             author: str = typer.Option("claude", "--author", "-a"),
             message: Optional[str] = typer.Option(None, "-m"),
@@ -152,8 +153,25 @@ def compose(name: str,
                 new_assets.append(a)
     else:
         console.print("[yellow]Surge XT no disponible: se usa el sintetizador integrado[/]")
+    preset_params = {}
+    if sounds:
+        from ..core.assets import sha256_file
+        from ..samples.sounds import resolve, sounds_path
+        try:
+            sp = sounds_path(sounds)
+            rs = resolve(sp, repo, ctx.key, ctx.sr)
+        except ValueError as e:
+            _fail(str(e))
+        if not SURGE_XT_VST3.exists():
+            rs.presets = {k: v for k, v in rs.presets.items() if k in ("kick", "drums", "fx")}
+        presets.update(rs.presets)
+        preset_params = rs.params
+        new_assets += rs.assets
+        cmeta["sounds"] = {"name": sp.stem, "sha256": sha256_file(sp)}
+        if not as_json:
+            console.print("Sonidos " + sp.stem + ":\n" + "\n".join(f"  {x}" for x in rs.log))
     try:
-        plan = arrange(tpl, ctx, bars, presets, variant=variant, compose_meta=cmeta)
+        plan = arrange(tpl, ctx, bars, presets, variant=variant, compose_meta=cmeta, preset_params=preset_params)
     except ValueError as e:
         _fail(str(e))
     known = repo.load(branch).assets if branch else repo.load().assets

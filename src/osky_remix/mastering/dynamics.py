@@ -164,6 +164,20 @@ def _pre_chain(x: np.ndarray, sr: int, prof: MasterProfile, log: list[str]) -> t
     return x, staging
 
 
+DC_BLOCK_HZ = 5.0
+
+
+def dc_block(x: np.ndarray, sr: int, hz: float = DC_BLOCK_HZ) -> np.ndarray:
+    """Paso alto de 1.er orden en fase cero (ida y vuelta). El limitador atenúa más los picos de un
+    bombo asimétrico (más alto hacia +) y eso deja un desplazamiento de DC en el master; el pre-
+    master no lo tiene. Va dentro del bucle de mastering, antes de medir el true peak."""
+    from scipy.signal import butter, sosfiltfilt
+    if not np.any(x):
+        return x
+    sos = butter(1, hz, "high", fs=sr, output="sos")
+    return sosfiltfilt(sos, x, axis=0)
+
+
 def master(audio: np.ndarray, sr: int, profile: MasterProfile, max_iter: int = 8) -> MasterResult:
     """Lleva el audio al objetivo del perfil sin superar el techo de true peak."""
     if max_iter < 1:
@@ -187,8 +201,8 @@ def master(audio: np.ndarray, sr: int, profile: MasterProfile, max_iter: int = 8
     margin = 0.1
     y = x
     for it in range(1, max_iter + 1):
-        y = limit(x * 10 ** (gain_db / 20), sr, profile.ceiling_dbtp - margin,
-                  profile.lookahead_ms, profile.release_ms)
+        y = dc_block(limit(x * 10 ** (gain_db / 20), sr, profile.ceiling_dbtp - margin,
+                           profile.lookahead_ms, profile.release_ms), sr)
         tp, lufs = true_peak_dbtp(y, sr), integrated_lufs(y, sr)
         log.append(f"it{it}: gain={gain_db:+.2f}dB margin={margin:.2f} -> {lufs:.2f} LUFS, {tp:.2f} dBTP")
         ok_tp = tp <= profile.ceiling_dbtp + 1e-3

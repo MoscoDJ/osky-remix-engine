@@ -17,6 +17,7 @@ dependencies = [
     "pyloudnorm>=0.1.1",
     "librosa>=0.10",
     "pedalboard>=0.9.26",
+    "numba>=0.60",          # audio.ladder (filtro escalera lineal muestra a muestra)
     "essentia>=2.1b6.dev1389",
     # MIDI
     "pretty_midi>=0.2.11",

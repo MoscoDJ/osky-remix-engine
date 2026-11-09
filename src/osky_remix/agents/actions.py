@@ -71,6 +71,34 @@ def headroom_action(p: Project, ev: Evaluation, policy: Policy) -> Action | None
                   [{"op": "set_master_profile", "profile": nxt}])
 
 
+DRUM_CLIP_ID = "auto-drum-clip"
+
+
+def drum_clip_action(p: Project, ev: Evaluation, policy: Policy) -> Action | None:
+    """Falta contraste y el limitador del master trabaja mucho: recortar primero los picos del bus
+    de batería (clipper suave antes de su compresor) en vez de ceder volumen."""
+    if not any(f.code == "energy_contrast" for f in ev.findings):
+        return None
+    limiting = ev.metrics.get("limiting_db")
+    if limiting is None or limiting < policy.limiting_threshold_db:
+        return None
+    bus = next((t for t in p.tracks if t.id == policy.drum_bus), None)
+    peak = (ev.metrics.get("bus_input_peak_dbfs") or {}).get(policy.drum_bus)
+    if bus is None or bus.locked or peak is None:
+        return None
+    cur = next((x for x in bus.plugins if x.id == DRUM_CLIP_ID), None)
+    shave = float(cur.params.get("shave_db", 0.0)) if cur else 0.0
+    new = min(policy.max_drum_clip_db, shave + policy.drum_clip_step_db)
+    if new <= shave + 1e-6:
+        return None
+    slot = {"id": DRUM_CLIP_ID, "backend": "builtin", "uri": "clipper",
+            "params": {"ceiling_db": round(peak - new, 2), "knee": 0.5, "shave_db": new}}
+    op = ({"op": "replace_plugin", "track": bus.id, "plugin_id": DRUM_CLIP_ID, "plugin": slot} if cur else
+          {"op": "add_plugin", "track": bus.id, "plugin": slot, "index": 0})
+    return Action("drum_clip", f"{bus.id}: recorte suave de picos {shave:.0f}→{new:.0f} dB (el limitador reduce "
+                               f"~{limiting:.1f} dB y se come el contraste)", [op])
+
+
 def track_gain_action(p: Project, ev: Evaluation, policy: Policy, code: str, track: str) -> Action | None:
     f = next((x for x in ev.findings if x.code == code), None)
     if f is None:
@@ -87,19 +115,42 @@ def track_gain_action(p: Project, ev: Evaluation, policy: Policy, code: str, tra
                   [{"op": "set_track", "track": track, "gain_db": new}])
 
 
-def plan_actions(p: Project, ev: Evaluation, policy: Policy = DEFAULT) -> tuple[list[Action], list[str]]:
-    """Acciones propuestas y hallazgos que requieren al usuario (pistas bloqueadas)."""
+ENERGY_FAMILY = ("energy_contrast", "drum_clip", "loudness_tradeoff")
+
+
+def _section_cuts(p: Project) -> dict[str, float]:
+    lane = next((x for x in p.automation if x.id == ENERGY_LANE), None)
+    out = {}
+    if lane:
+        for s in sections_of(p):
+            pt = [x for x in lane.points if x.tick <= s["tick"]]
+            out[s["name"]] = -pt[-1].value if pt else 0.0
+    return out
+
+
+def plan_actions(p: Project, ev: Evaluation, policy: Policy = DEFAULT,
+                 exclude: frozenset[str] = frozenset()) -> tuple[list[Action], list[str]]:
+    """Acciones propuestas y hallazgos que requieren al usuario (pistas bloqueadas).
+
+    Falta de contraste (familia de energía, una acción por iteración, en este orden):
+    1. recortar las secciones con déficit mientras ninguna llegue a ``cut_before_tradeoff_db``;
+    2. si ya llegaron y el limitador trabaja mucho: recortar picos del bus de batería;
+    3. ceder volumen (perfil siguiente);
+    4. seguir recortando secciones hasta ``max_total_section_cut_db``.
+    ``exclude``: acciones de la familia ya probadas sin mejora en esta iteración (el planificador
+    pasa a la siguiente alternativa).
+    """
     acts, blocked = [], []
     a = energy_action(p, ev, policy)
-    lane = next((x for x in p.automation if x.id == ENERGY_LANE), None)
-    # orden: primero recortes por sección; ceder volumen (perfil menos fuerte) solo si ya hay
-    # recortes y aun así falta contraste (o se agotó el margen de recorte)
-    max_cut = max((-pt.value for pt in lane.points), default=0.0) if lane else 0.0
-    h = headroom_action(p, ev, policy) if (a is None or max_cut >= policy.cut_before_tradeoff_db) else None
-    if h:
-        acts.append(h)
-    elif a:
-        acts.append(a)
+    deficient = [f.data["section"] for f in ev.findings if f.code == "energy_contrast"]
+    cuts = _section_cuts(p)
+    early = a is not None and min((cuts.get(x, 0.0) for x in deficient), default=0.0) < policy.cut_before_tradeoff_db
+    h = headroom_action(p, ev, policy)
+    c = drum_clip_action(p, ev, policy)
+    order = [a, c, h] if early else [c, h, a]
+    pick = next((x for x in order if x is not None and x.name not in exclude), None)
+    if pick:
+        acts.append(pick)
     for code, track in (("vocal_level", "vox"), ("bass_balance", "bass")):
         f = next((x for x in ev.findings if x.code == code), None)
         if f is None:

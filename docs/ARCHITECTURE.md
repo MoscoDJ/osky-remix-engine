@@ -22,6 +22,10 @@ backend alternativo cuando exista.
   SQLite `library.db`. Un kit (`samples.kit`) es un asset JSON nota → sample referenciado por
   `PluginSlot.preset` de los instrumentos integrados `drums` y `sampler`; el renderer exige que
   sus samples estén registrados en el proyecto (`validate_capabilities`).
+  Opciones por voz: `pitch_st` (remuestreo) y `anchor` (`end`: el sample termina en el fin de
+  la nota); `fx` también acepta kit. `samples.sounds` resuelve un juego de sonidos (presets de
+  usuario + kits) a assets del proyecto y genera las operaciones de cambio con igualación de
+  sonoridad por pista (`sounds apply`).
 - **Lotes** (`batch/`): pasos enchufables `fn(ctx) -> dict` que llaman en proceso a las
   funciones de la CLI (`--json`); manifiesto JSON con bloqueo `fcntl` y escritura atómica por
   canción/paso; reanudación saltando pasos hechos; `--jobs` con procesos `spawn`, separación

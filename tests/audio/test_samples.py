@@ -259,3 +259,156 @@ def test_cli_import_search_use(tmp_path, folder, monkeypatch):
     Renderer(repo.load(), repo.assets, repo.cache).validate_capabilities()
     bad = run(app, ["samples", "use", "kit", hsha, "--track", "nada", "--json"])
     assert bad.exit_code != 0
+
+
+# ------------------------------------------------------------ opciones de voz y juegos de sonidos
+def test_kit_sha_stable_for_default_voice_options():
+    """Las opciones nuevas se omiten si valen lo de defecto: los kits anteriores conservan su sha."""
+    from osky_remix.samples.kit import parse_kit
+    old = kit_bytes({36: {"sample": "a" * 64, "gain_db": -3.0}})
+    assert old == kit_bytes(parse_kit(old))
+    assert b"pitch_st" not in old and b"anchor" not in old
+    new = parse_kit(kit_bytes({36: {"sample": "a" * 64, "pitch_st": 3, "anchor": "end"}}))
+    assert new[36]["pitch_st"] == 3.0 and new[36]["anchor"] == "end"
+    with pytest.raises(ValueError, match="anchor"):
+        parse_kit(json.dumps({"format": "osky-kit", "version": 1, "voices": {"36": {"sample": "a" * 64, "anchor": "x"}}}))
+
+
+def test_repitch_moves_measured_f0():
+    from osky_remix.samples.kit import repitch
+    x = np.stack([kick(50.0, 0.3, 1.0)] * 2, 1).astype(np.float32)
+    for st in (4, -3):
+        f0 = extract(repitch(x, st)[:, 0], SR)["f0_hz"]
+        assert abs(12 * np.log2(f0 / 50.0) - st) < 0.1, (st, f0)
+
+
+def test_end_anchor_and_fx_kit(tmp_path):
+    """anchor=end: el sample termina en la muestra exacta del final de la nota (riser → drop)."""
+    repo = ProjectRepo.create(tmp_path / "p", Project(name="fx", sample_rate=SR))
+    n = int(0.5 * SR)
+    x = np.linspace(0, 1, n).astype(np.float32) * np.sin(np.arange(n) * 0.05).astype(np.float32)
+    f = tmp_path / "riser.wav"
+    sf.write(f, np.stack([x, x], 1), SR, subtype="FLOAT")
+    a = repo.assets.ingest(f, AssetKind.sample, Provenance(tool="test"))
+    k = tmp_path / "kit.json"
+    k.write_bytes(kit_bytes({1: {"sample": a.sha256, "anchor": "end"}}))
+    ka = repo.assets.ingest(k, AssetKind.preset, Provenance(tool="test"))
+    repo.commit([{"op": "register_asset", "asset": a.model_dump(mode="json")},
+                 {"op": "register_asset", "asset": ka.model_dump(mode="json")}], "user", "kit")
+    notes = [{"tick": 0, "duration": 4 * 960, "pitch": 1, "velocity": 127}]
+    p, _ = _sampler_project(repo, a.sha256, ka.sha256, uri="fx", notes=notes)
+    r = Renderer(p, repo.assets, repo.cache)
+    r.validate_capabilities()
+    r.output("smp")
+    y = r.pre["smp"][:, 0]
+    tm = p.tempo_map()
+    end = tm.tick_to_sample(960 + 4 * 960)
+    exp = np.zeros_like(y)
+    exp[end - n:end] = x
+    assert np.allclose(y, exp, atol=1e-6)                # sin riser sintético: la nota mapeada suena solo del kit
+
+
+def test_match_gain_and_key_shift():
+    from osky_remix.samples.sounds import _win_peak_rms, builtin_reference, key_shift, match_gain
+    x = kick(55.0, 0.1, 0.5)
+    g = match_gain("kick", 36, x, SR)
+    ref, win = builtin_reference("kick", 36, SR)
+    assert abs(20 * np.log10(_win_peak_rms(x * 10 ** (g / 20) * 112 / 127, SR, win) / _win_peak_rms(ref, SR, win))) < 0.01
+    assert key_shift("A1", "D minor") == 0.0          # ya es la quinta
+    assert key_shift("E1", "D minor") == -2.0         # a la tónica
+    assert key_shift("B1", "D minor") == -2.0         # a la quinta (A)
+    assert key_shift("G#1", "D minor") == 1.0         # a la quinta (A)
+    assert key_shift(None, "D minor") == 0.0
+    assert key_shift("E1", "Dm") == key_shift("E1", "D minor") == -2.0     # formato corto del proyecto
+    assert key_shift("C1", "Bbm") == -2.0 and key_shift("D1", "Bb major") == 3.0   # a Bb / a F (quinta)
+
+
+def test_sounds_resolve_builds_kits_and_presets(tmp_path, folder, monkeypatch):
+    monkeypatch.setenv("OSKY_WORKSPACE", str(tmp_path / "ws"))
+    from osky_remix.samples.kit import load_kit
+    from osky_remix.samples.sounds import resolve
+    lib = SampleLibrary()
+    lib.import_dir(folder)
+    ksha = next(h.sha for h in lib.all() if h.name == "kick.wav")
+    hsha = next(h.sha for h in lib.all() if h.name == "hat.wav")
+    fxp = tmp_path / "Mi Bajo.fxp"
+    fxp.write_bytes(b"CcnK" + b"\0" * 4 + b"FPCh" + b"\0" * 48)
+    spec = tmp_path / "s.json"
+    spec.write_text(json.dumps({"instruments": {"bass": {"fxp": str(fxp), "params": {"Volume": 0.5}}},
+                                "kits": {"kick": {"36": {"sample": ksha[:10], "gain_db": "match", "pitch_st": "key"}},
+                                         "drums": {"42": {"sample": hsha, "gain_db": -4}}}}))
+    repo = ProjectRepo.create(tmp_path / "p", Project(name="s", sample_rate=SR))
+    rs = resolve(spec, repo, "D minor", SR, lib)
+    assert set(rs.presets) == {"bass", "kick", "drums"} and rs.params == {"bass": {"Volume": 0.5}}
+    kick_kit = load_kit(repo.assets.find(rs.presets["kick"]))
+    v = kick_kit[36]
+    assert repo.assets.exists(v["sample"]) and v["sample"] == ksha     # mismo contenido, mismo sha
+    note = lib.resolve(ksha).features["note"]                          # 50 Hz ≈ G1 → quinta (A): +2
+    assert note and v["pitch_st"] == __import__("osky_remix.samples.sounds", fromlist=["x"]).key_shift(note, "D minor")
+    assert load_kit(repo.assets.find(rs.presets["drums"]))[42]["gain_db"] == -4.0
+    assert all(repo.assets.exists(a.sha256) for a in rs.assets)
+
+
+def test_swap_ops_level_matches_and_respects_locks(tmp_path):
+    from osky_remix.mastering.loudness import integrated_lufs
+    from osky_remix.samples.sounds import ResolvedSounds, swap_ops
+    repo = ProjectRepo.create(tmp_path / "p", Project(name="w", sample_rate=SR))
+    x = 0.2 * kick(60.0, 0.06, 0.4)                                    # mucho más bajo que el bombo integrado
+    a, ka = _kit_assets(repo, tmp_path, x)
+    notes = [{"tick": i * 960, "duration": 120, "pitch": 36, "velocity": 110} for i in range(16)]
+    ops = [{"op": "add_track", "id": t, "name": t, "kind": "instrument"} for t in ("kick", "drums")]
+    ops += [{"op": "add_plugin", "track": t, "plugin": {"id": f"{t}-inst", "backend": "builtin", "uri": "drums"}} for t in ("kick", "drums")]
+    ops += [{"op": "add_clip", "track": t, "clip": {"type": "midi", "id": f"c{t}", "start_tick": 0, "length_ticks": 16 * 960,
+                                                    "notes": notes}} for t in ("kick", "drums")]
+    ops += [{"op": "set_track", "track": "kick", "gain_db": -3.0}, {"op": "lock_track", "track": "drums"}]
+    repo.commit(ops, "user", "base")
+    p = repo.load()
+    rs = ResolvedSounds(presets={"kick": ka.sha256, "drums": ka.sha256}, assets=[])
+    sw, rep = swap_ops(p, rs, repo.assets, repo.cache)
+    assert rep["drums"] == {"skipped": "pista bloqueada"}
+    assert rep["kick"]["trim_db"] > 6                                   # sample más bajo: trim positivo
+    after = apply_ops(p, parse_ops(sw), Context(author="claude"))
+    k0 = next(t for t in p.tracks if t.id == "kick"); k1 = next(t for t in after.tracks if t.id == "kick")
+    assert k1.plugins[0].preset == ka.sha256
+    assert k1.plugins[1].id == "kick-sound-trim" and k1.plugins[1].params["db"] == pytest.approx(rep["kick"]["trim_db"])
+    # el fader solo recibe el exceso de gain staging (cadena lineal)
+    assert k1.gain_db == pytest.approx(-3.0 + rep["kick"]["fader_db"], abs=0.01)
+    # la salida de la pista (instrumento + trim + fader) suena igual que antes
+    r0, r1 = Renderer(p, repo.assets, repo.cache), Renderer(after, repo.assets, repo.cache)
+    r0.output("kick"); r1.output("kick")
+    assert abs(integrated_lufs(r0.post["kick"], SR) - integrated_lufs(r1.post["kick"], SR)) < 0.05
+    # aplicar otra vez el mismo juego no acumula el trim
+    sw2, rep2 = swap_ops(after, rs, repo.assets, repo.cache)
+    assert rep2["kick"]["trim_db"] == pytest.approx(rep["kick"]["trim_db"], abs=0.05)
+    assert any(o["op"] == "replace_plugin" and o["plugin_id"] == "kick-sound-trim" for o in sw2)
+
+
+def test_swap_ops_moves_excess_trim_to_fader_on_linear_chain(tmp_path):
+    """Sample muy bajo y con mucha cresta: el trim que iguala la sonoridad dejaría la cadena por
+    encima de −1 dBFS; con cadena lineal el exceso va al fader y la salida es la misma."""
+    from osky_remix.mastering.loudness import integrated_lufs
+    from osky_remix.samples.sounds import ResolvedSounds, STAGING_PEAK_DBFS, swap_ops
+    repo = ProjectRepo.create(tmp_path / "p", Project(name="g", sample_rate=SR))
+    x = 0.2 * kick(60.0, 0.05, 0.3)                    # −32 LUFS frente a −14.6 del integrado: trim ≈ +17.5 dB
+    a, ka = _kit_assets(repo, tmp_path, x)
+    notes = [{"tick": i * 960, "duration": 120, "pitch": 36, "velocity": 110} for i in range(16)]
+    repo.commit([{"op": "add_track", "id": "kick", "name": "k", "kind": "instrument"},
+                 {"op": "add_plugin", "track": "kick", "plugin": {"id": "kick-inst", "backend": "builtin", "uri": "drums"}},
+                 {"op": "add_plugin", "track": "kick", "plugin": {"id": "hp", "backend": "builtin", "uri": "highpass", "params": {"hz": 30}}},
+                 {"op": "add_clip", "track": "kick", "clip": {"type": "midi", "id": "c", "start_tick": 0, "length_ticks": 16 * 960, "notes": notes}}],
+                "user", "base")
+    p = repo.load()
+    sw, rep = swap_ops(p, ResolvedSounds(presets={"kick": ka.sha256}), repo.assets, repo.cache)
+    assert rep["kick"]["fader_db"] > 0
+    after = apply_ops(p, parse_ops(sw), Context(author="claude"))
+    # misma salida que con toda la compensación en el trim (la cadena es lineal)
+    all_trim = apply_ops(after, parse_ops([
+        {"op": "replace_plugin", "track": "kick", "plugin_id": "kick-sound-trim",
+         "plugin": {"id": "kick-sound-trim", "backend": "builtin", "uri": "gain",
+                    "params": {"db": rep["kick"]["trim_db"] + rep["kick"]["fader_db"]}}},
+        {"op": "set_track", "track": "kick", "gain_db": 0.0}]), Context(author="claude"))
+    r1, r2 = Renderer(after, repo.assets, repo.cache), Renderer(all_trim, repo.assets, repo.cache)
+    r1.output("kick"); r2.output("kick")
+    assert 20 * np.log10(np.abs(r1.pre["kick"]).max()) <= STAGING_PEAK_DBFS + 0.05
+    assert 20 * np.log10(np.abs(r2.pre["kick"]).max()) > STAGING_PEAK_DBFS + 1
+    assert np.allclose(r1.post["kick"], r2.post["kick"], atol=2e-5)

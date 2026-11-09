@@ -3,7 +3,8 @@
 Cada iteración: acciones -> proyecto candidato (apply_ops, misma validación que el contrato) ->
 render en memoria -> evaluación. Si el puntaje mejora al menos ``min_improvement``, se confirma
 como revisión en la rama (autor claude, mensaje con el motivo y las métricas). Si no, se descarta
-sin dejar rastro en el historial.
+sin dejar rastro en el historial y, si la propuesta incluía una acción de la familia de energía,
+se prueba la siguiente alternativa de esa familia (hasta ``max_alternatives`` por iteración).
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from ..audio.renderer import Renderer
 from ..core.operations import Context
 from ..core.revisions import ProjectRepo, RepoError
 from ..core.transactions import TransactionError, apply_ops, parse_ops
-from .actions import plan_actions
+from .actions import ENERGY_FAMILY, plan_actions
 from .evaluator import Evaluation, evaluate
 from .policies import DEFAULT, Policy
 
@@ -51,21 +52,35 @@ def improve(repo: ProjectRepo, branch: str, policy: Policy = DEFAULT, profile: s
     log(f"inicial: {ev.summary()}")
     out = ImproveResult(initial=ev, final=ev)
     for it in range(1, policy.max_iterations + 1):
-        acts, blocked = plan_actions(p, ev, policy)
-        out.needs_user = blocked
-        if not acts:
-            log("sin acciones posibles" + (f" ({len(blocked)} hallazgos requieren al usuario)" if blocked else ""))
-            break
-        ops = [op for a in acts for op in a.ops]
-        try:
-            cand = apply_ops(p, parse_ops(ops), Context(author=policy.author))
-        except TransactionError as e:
-            out.steps.append(Step(it, [a.rationale for a in acts], ev.score, None, False, None, f"rechazado por el contrato: {e}"))
-            log(f"it{it}: rechazado por el contrato: {e}")
-            break
-        ev2 = assess(cand, repo, policy, profile)
-        better = ev2.score <= ev.score - policy.min_improvement or (ev2.score == 0 and ev.score > 0)
-        if better:
+        exclude: frozenset[str] = frozenset()
+        accepted = False
+        for attempt in range(policy.max_alternatives + 1):
+            acts, blocked = plan_actions(p, ev, policy, exclude)
+            out.needs_user = blocked
+            if not acts:
+                if attempt == 0:
+                    log("sin acciones posibles" + (f" ({len(blocked)} hallazgos requieren al usuario)" if blocked else ""))
+                break
+            tag = f"it{it}" + (f".{attempt}" if attempt else "")
+            ops = [op for a in acts for op in a.ops]
+            try:
+                cand = apply_ops(p, parse_ops(ops), Context(author=policy.author))
+            except TransactionError as e:
+                out.steps.append(Step(it, [a.rationale for a in acts], ev.score, None, False, None, f"rechazado por el contrato: {e}"))
+                log(f"{tag}: rechazado por el contrato: {e}")
+                break
+            ev2 = assess(cand, repo, policy, profile)
+            need = max(policy.min_improvement, policy.tradeoff_min_improvement
+                       if any(a.name == "loudness_tradeoff" for a in acts) else 0.0)
+            better = ev2.score <= ev.score - need or (ev2.score == 0 and ev.score >= need)
+            if not better:
+                out.steps.append(Step(it, [a.rationale for a in acts], ev.score, ev2.score, False, None, "no mejora"))
+                log(f"{tag}: descartado ({ev.score:.2f}→{ev2.score:.2f}) · " + "; ".join(a.rationale for a in acts))
+                tried = {a.name for a in acts if a.name in ENERGY_FAMILY}
+                if not tried:
+                    break                      # nada alternativo que probar
+                exclude = exclude | tried
+                continue
             msg = "Agente: " + "; ".join(a.rationale for a in acts) + f" (puntaje {ev.score:.2f}→{ev2.score:.2f})"
             try:
                 rev = repo.commit(parse_ops(ops), policy.author, msg[:500], branch, expected_head=expected)
@@ -75,14 +90,12 @@ def improve(repo: ProjectRepo, branch: str, policy: Policy = DEFAULT, profile: s
                 break
             expected = rev.id
             out.steps.append(Step(it, [a.rationale for a in acts], ev.score, ev2.score, True, rev.id))
-            log(f"it{it}: ACEPTADO {ev.score:.2f}→{ev2.score:.2f} · " + "; ".join(a.rationale for a in acts))
+            log(f"{tag}: ACEPTADO {ev.score:.2f}→{ev2.score:.2f} · " + "; ".join(a.rationale for a in acts))
             p, ev = cand, ev2
             out.final = ev
-            if ev.score == 0:
-                break
-        else:
-            out.steps.append(Step(it, [a.rationale for a in acts], ev.score, ev2.score, False, None, "no mejora"))
-            log(f"it{it}: descartado ({ev.score:.2f}→{ev2.score:.2f}) · " + "; ".join(a.rationale for a in acts))
+            accepted = True
+            break
+        if not accepted or ev.score == 0:
             break
     log(f"final: {out.final.summary()}")
     return out

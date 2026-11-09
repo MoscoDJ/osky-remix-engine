@@ -112,6 +112,21 @@ sample y un kit (`preset` JSON nota → sample) en el proyecto con operaciones v
 instrumento `drums` toca con samples las notas mapeadas y el `sampler` solo esas, a la muestra
 exacta de cada nota con ganancia `velocidad/127`.
 
+Juegos de sonidos (`workspace/sounds/<nombre>.json`, fuera del repo porque los packs no se pueden
+redistribuir): presets `.fxp` de Surge de usuario por rol y kits de samples para `kick`, `drums` y
+`fx`. Con `gain_db: "match"` cada sample se iguala al instrumento integrado que sustituye; con
+`pitch_st: "key"` se afina a la tónica o la quinta; con `anchor: "end"` un riser termina justo en
+el final de su nota (el drop).
+
+```bash
+uv run osky-remix compose mi-remix ... --sounds osky-sevenn            # arreglo nuevo con esos sonidos
+uv run osky-remix sounds apply mi-remix osky-sevenn --branch prueba    # cambia solo los sonidos de una rama
+```
+
+`sounds apply` no toca el arreglo ni la mezcla: renderiza cada pista con el sonido anterior y el
+nuevo y compensa la diferencia de sonoridad con un trim de entrada (efecto `gain` tras el
+instrumento), sin mover los faders, para comparar solo timbre.
+
 ## Lotes
 
 ```bash

@@ -156,3 +156,34 @@ def samples_use(name: str, sha: str, track: str = typer.Option(..., "--track", h
         _fail(str(e))
     _out(as_json, {"revision": rev.id, "track": track, "pitch": pitch, "sample": sample.sha256, "kit": kit.sha256},
          f"[green]OK[/] {h.name} → {track} nota {pitch} · kit {kit.sha256[:12]} · revisión {rev.id[:12]}")
+
+
+sounds_app = typer.Typer(help="Juegos de sonidos: presets de Surge de usuario y kits de samples (workspace/sounds/)",
+                         no_args_is_help=True)
+
+
+@sounds_app.command("apply")
+def sounds_apply(name: str, sounds: str,
+                 branch: Optional[str] = typer.Option(None, "--branch", help="rama sobre la que se aplica (y se confirma)"),
+                 level_match: bool = typer.Option(True, "--level-match/--no-level-match",
+                                                  help="compensar en el fader la diferencia de sonoridad de cada pista"),
+                 author: str = typer.Option("claude", "--author", "-a"), as_json: bool = typer.Option(False, "--json")):
+    """Cambia los instrumentos de las pistas existentes por los del juego, sin tocar el arreglo."""
+    from ..core.assets import sha256_file
+    from ..samples.sounds import resolve, sounds_path, swap_ops
+    repo = _repo(name)
+    try:
+        p = repo.load(branch)
+        sp = sounds_path(sounds)
+        rs = resolve(sp, repo, p.key or "C major", p.sample_rate)
+        ops, rep = swap_ops(p, rs, repo.assets, repo.cache, level_match,
+                            log=(lambda *_: None) if as_json else (lambda m: console.print(f"  {m}")))
+        ops.append({"op": "set_meta", "key": "sounds", "value": {"name": sp.stem, "sha256": sha256_file(sp)}})
+        rev = repo.commit(ops, _author(author), f"Sonidos {sp.stem}", branch)
+    except (ValueError, RepoError, TransactionError) as e:
+        _fail(str(e))
+    data = {"revision": rev.id, "sounds": sp.stem, "log": rs.log, "tracks": rep}
+    _out(as_json, data, f"[green]OK[/] revisión {rev.id[:12]} · sonidos {sp.stem}\n"
+         + "\n".join(f"  {x}" for x in rs.log) + "\n"
+         + "\n".join(f"  {t}: {v.get('lufs_before')} → {v.get('lufs_after')} LUFS, trim {v.get('trim_db', 0):+.1f} dB"
+                     if "skipped" not in v else f"  {t}: {v['skipped']}" for t, v in rep.items()))

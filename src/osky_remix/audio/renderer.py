@@ -35,7 +35,10 @@ from .automation import curve, lanes_for
 from .effects import EFFECTS, apply_effect, pan_gain_curve
 from .graph import build_graph, describe
 
-RENDER_VERSION = "3.1.0"
+RENDER_VERSION = "3.2.0"        # 3.2: filtros escalera lineales (audio.ladder), clipper, DC en el master
+# El audio crudo de Surge no depende de los efectos: su caché (congelado de patches estocásticos)
+# tiene versión propia para que subir RENDER_VERSION no re-renderice (y cambie) esos patches.
+SURGE_CACHE_VERSION = "3.1.0"
 INSTRUMENTS_BUILTIN = {"drums", "fx", "synth", "sampler"}   # sampler/drums: kit de samples en preset
 TAIL_S = 4.0
 
@@ -238,7 +241,7 @@ class Renderer:
         from .render_service import environment_manifest
         payload = {"environment": environment_manifest(), "notes": notes, "params": slot.params, "n": self.n, "sr": self.sr,
                    "automation": {k: ln.model_dump(mode="json") for k, ln in lanes.items()}}
-        key = cache_key("surge_track", RENDER_VERSION, [slot.preset or "default"], payload)
+        key = cache_key("surge_track", SURGE_CACHE_VERSION, [slot.preset or "default"], payload)
         with self.cache.lock(cache_key("surge_generation", "1", [key])):
             hit = self.cache.get(key)
             if hit:

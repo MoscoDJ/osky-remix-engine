@@ -7,6 +7,13 @@ el kit es registrar uno nuevo y reemplazar el plugin con una operación validada
 
 Reproducción: el sample entra en la muestra exacta de la nota (``tick_to_sample``), entero,
 con ganancia ``velocidad/127 · 10^(gain_db/20)``; la duración de la nota no lo corta (one-shot).
+
+Opciones por voz (se omiten del JSON cuando valen lo de defecto, así los kits anteriores conservan
+su sha):
+- ``pitch_st``: transposición en semitonos por remuestreo (cambia también la duración, como en
+  un sampler clásico); sirve para afinar el bombo a la tonalidad.
+- ``anchor``: ``"start"`` (defecto) o ``"end"``: el sample *termina* en el final de la nota. Para
+  risers y barridos cuyo punto culminante es el final: cae exacto en el drop.
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ import numpy as np
 
 KIT_FORMAT = "osky-kit"
 KIT_VERSION = 1
-KIT_INSTRUMENTS = {"drums", "sampler"}
+KIT_INSTRUMENTS = {"drums", "sampler", "fx"}
 DEFAULT_PITCH = {"kick": 36, "snare": 38, "clap": 39, "hat": 42, "perc": 37}
 
 
@@ -25,7 +32,9 @@ def kit_bytes(voices: dict[int, dict]) -> bytes:
     """JSON canónico (mismo kit -> mismo sha)."""
     data = {"format": KIT_FORMAT, "version": KIT_VERSION,
             "voices": {str(int(p)): {"sample": v["sample"], "gain_db": float(v.get("gain_db", 0.0)),
-                                     **({"name": v["name"]} if v.get("name") else {})}
+                                     **({"name": v["name"]} if v.get("name") else {}),
+                                     **({"pitch_st": float(v["pitch_st"])} if v.get("pitch_st") else {}),
+                                     **({"anchor": v["anchor"]} if v.get("anchor", "start") != "start" else {})}
                        for p, v in sorted(voices.items(), key=lambda kv: int(kv[0]))}}
     return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
@@ -44,7 +53,14 @@ def parse_kit(raw: bytes | str) -> dict[int, dict]:
         sha = v.get("sample", "")
         if not (isinstance(sha, str) and len(sha) == 64):
             raise ValueError(f"sample inválido para la nota {pitch}")
-        out[pitch] = {"sample": sha, "gain_db": float(v.get("gain_db", 0.0)), "name": v.get("name")}
+        anchor = v.get("anchor", "start")
+        if anchor not in ("start", "end"):
+            raise ValueError(f"anchor inválido para la nota {pitch}: {anchor}")
+        pst = float(v.get("pitch_st", 0.0))
+        if not -24 <= pst <= 24:
+            raise ValueError(f"pitch_st fuera de rango (±24) para la nota {pitch}")
+        out[pitch] = {"sample": sha, "gain_db": float(v.get("gain_db", 0.0)), "name": v.get("name"),
+                      "pitch_st": pst, "anchor": anchor}
     return out
 
 
@@ -59,16 +75,32 @@ def render_kit(notes, kit: dict[int, dict], load_audio, n: int) -> np.ndarray:
     float32 (muestras, 2) ya a la frecuencia del proyecto.
     """
     y = np.zeros((n, 2), np.float32)
-    audio: dict[str, np.ndarray] = {}
-    for a, _b, p, v in notes:
+    audio: dict[tuple[str, float], np.ndarray] = {}
+    for a, b, p, v in notes:
         voice = kit.get(p)
         if voice is None or a >= n:
             continue
-        sha = voice["sample"]
-        if sha not in audio:
-            audio[sha] = load_audio(sha)
-        x = audio[sha]
+        key = (voice["sample"], float(voice.get("pitch_st", 0.0)))
+        if key not in audio:
+            audio[key] = repitch(load_audio(key[0]), key[1])
+        x = audio[key]
         g = np.float32(v / 127 * 10 ** (voice["gain_db"] / 20))
+        if voice.get("anchor", "start") == "end":
+            a = b - len(x)
+            if a < 0:                                   # más largo que lo disponible: se recorta el inicio
+                x, a = x[-a:], 0
         k = min(len(x), n - a)
-        y[a:a + k] += x[:k] * g
+        if k > 0:
+            y[a:a + k] += x[:k] * g
     return y
+
+
+def repitch(x: np.ndarray, semitones: float) -> np.ndarray:
+    """Transposición por remuestreo (sinc, polifásico) de ``semitones``; 0 devuelve el original."""
+    if not semitones:
+        return x
+    from fractions import Fraction
+
+    from scipy.signal import resample_poly
+    r = Fraction(2 ** (-semitones / 12)).limit_denominator(1000)     # nuevas/viejas muestras
+    return resample_poly(x, r.numerator, r.denominator, axis=0).astype(np.float32)

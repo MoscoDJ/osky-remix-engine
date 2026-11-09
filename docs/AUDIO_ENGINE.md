@@ -53,7 +53,7 @@ solo de trompeta, puente con cortes, coro 2 y outro con "Nada quedó… solo tu 
 |---|---|
 | Clips de audio | desde el asset, offset/longitud en muestras, ganancia, fades; remuestreo si hace falta |
 | Instrumentos | primer plugin de la pista: Surge XT (DawDreamer) o integrado (`drums`, `fx`, `synth`) |
-| Efectos integrados | highpass, lowpass, eq, compressor, reverb, delay (en tiempos), chorus, gain, sidechain, stereo, deesser |
+| Efectos integrados | highpass, lowpass, eq, compressor, reverb, delay (en tiempos), chorus, gain, sidechain, stereo, deesser, clipper |
 | Enrutado | salidas a buses/master, envíos post-fader a retornos, sidechain desde otra pista |
 | Master | perfil de `mastering.dynamics` (LUFS objetivo + techo de true peak con lookahead) |
 | Salidas | premaster float32, master WAV 24 bits, stems post-fader float32, reporte JSON |
@@ -83,7 +83,9 @@ uv run osky-remix package verify <carpeta>
 | Grafo DSP | `audio/graph.py`: orden topológico por salidas, envíos y sidechain. Un ruteo circular es inválido en el modelo, así que la operación que lo crearía se rechaza. |
 | Envíos | `add_send` / `remove_send`; pre-fader (tras efectos, antes de ganancia/paneo) o post-fader. |
 | Automatización | `gain_db`, `pan`, `<plugin>.<parámetro>` de efectos integrados (por bloques de 512 muestras, el estado del plugin se conserva) y de Surge XT (parámetro por nombre). Curvas `linear` o `hold`. Un destino no automatizable produce un aviso y se aplica el valor fijo. |
-| Filtros | `LadderFilter` de 24 dB/oct con resonancia (los filtros simples de pedalboard son de 6 dB/oct). |
+| Filtros | Escalera de 12/24 dB/oct con resonancia (`audio/ladder.py`): la topología del `LadderFilter` de JUCE sin su saturación `tanh`, que coloreaba según el nivel (COMPATIBILITY 18). Frecuencia y resonancia automatizables por muestra. |
+| Clipper | `clipper`: lineal hasta `knee·techo`, `tanh` encima, sobremuestreo 4x contra aliasing. El agente lo usa en el bus de batería (`auto-drum-clip`) antes de ceder volumen. |
+| Master | Bloqueo de DC a 5 Hz tras el limitador, dentro del bucle de true peak (COMPATIBILITY 19). |
 | Estéreo | efecto `stereo`: ancho por M/S y graves en mono. |
 | Gain staging | aviso si una pista supera 0 dBFS antes del fader; los instrumentos integrados dejan 6 dB de margen. |
 | Mastering | perfiles en `presets/mastering/*.json` o integrados: bloqueo de DC, pico de entrada, graves en mono, tilt, glue, objetivo LUFS y techo de true peak. Campo `master_profile` del proyecto (`set_master_profile`). |

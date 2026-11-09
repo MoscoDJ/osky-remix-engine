@@ -11,15 +11,18 @@ uri -> parámetros (los marcados con * son automatizables):
   sidechain: depth*, release_ms  (fuente: Track.sidechain_from)
   stereo: width* (0 = mono, 1 = igual, 2 = doble), mono_below_hz (graves en mono)
   deesser: threshold_db*, range_db*, freq_hz, width_oct, ratio, attack_ms, release_ms
+  clipper: ceiling_db (techo absoluto, dBFS), knee (0-1: fracción del techo bajo la que es lineal),
+           oversample (por defecto 4). Recorte suave de transitorios (bus de batería).
 """
 from __future__ import annotations
 
 import numpy as np
-from pedalboard import (Chorus, Compressor, Delay, Gain, HighShelfFilter, LadderFilter, LowShelfFilter, Pedalboard,
+from pedalboard import (Chorus, Compressor, Delay, Gain, HighShelfFilter, LowShelfFilter, Pedalboard,
                         PeakFilter, Reverb)
 from scipy.signal import butter, sosfiltfilt
 
-EFFECTS = {"highpass", "lowpass", "eq", "compressor", "reverb", "delay", "chorus", "gain", "sidechain", "stereo", "deesser"}
+EFFECTS = {"highpass", "lowpass", "eq", "compressor", "reverb", "delay", "chorus", "gain", "sidechain", "stereo", "deesser",
+           "clipper"}
 BLOCK = 512
 
 # parámetro -> (atributo de pedalboard, conversión)
@@ -38,14 +41,7 @@ AUTOMATABLE = {
 
 
 def _plugins(uri: str, p: dict, bpm: float) -> list:
-    # LadderFilter (24 dB/oct): HighpassFilter/LowpassFilter de pedalboard son de un polo
-    # (6 dB/oct) y no sirven para barridos de filtro (ver docs/COMPATIBILITY.md)
-    if uri in ("highpass", "lowpass"):
-        slope = int(p.get("slope", 24))
-        mode = {("lowpass", 24): LadderFilter.Mode.LPF24, ("lowpass", 12): LadderFilter.Mode.LPF12,
-                ("highpass", 24): LadderFilter.Mode.HPF24, ("highpass", 12): LadderFilter.Mode.HPF12}[(uri, slope)]
-        return [LadderFilter(mode=mode, cutoff_hz=p.get("hz", 120 if uri == "highpass" else 8000),
-                             resonance=p.get("resonance", 0.0), drive=1.0)]
+    # highpass/lowpass no pasan por pedalboard: audio.ladder (escalera lineal, ver COMPATIBILITY 13 y 18)
     if uri == "eq":
         return [LowShelfFilter(cutoff_frequency_hz=p.get("low_hz", 120), gain_db=p.get("low_db", 0)),
                 PeakFilter(cutoff_frequency_hz=p.get("mid_hz", 1000), gain_db=p.get("mid_db", 0), q=p.get("mid_q", 1.0)),
@@ -85,6 +81,14 @@ def apply_effect(uri: str, p: dict, x: np.ndarray, sr: int, bpm: float, sidechai
                      attack_ms=p.get("attack_ms", 0.5), release_ms=p.get("release_ms", 60.0))
     if uri == "stereo":
         return stereo(x, sr, automation.get("width", p.get("width", 1.0)), p.get("mono_below_hz", 0))
+    if uri == "clipper":
+        return soft_clip(x, p.get("ceiling_db", -1.0), p.get("knee", 0.5), int(p.get("oversample", 4)))
+    if uri in ("highpass", "lowpass"):
+        from .ladder import ladder
+        mode = ("HP" if uri == "highpass" else "LP") + str(int(p.get("slope", 24)))
+        hz = automation.get("hz", p.get("hz", 120 if uri == "highpass" else 8000))
+        res = automation.get("resonance", p.get("resonance", 0.0))
+        return ladder(x, sr, mode, hz, res)
     plugs = _plugins(uri, p, bpm)
     if not automation:
         return Pedalboard(plugs)(x.T.astype(np.float32).copy(), sr, reset=True).T[: len(x)]
@@ -102,6 +106,30 @@ def apply_effect(uri: str, p: dict, x: np.ndarray, sr: int, bpm: float, sidechai
                 plug.dry_level = 1 - val * 0.5
         out[a:a + BLOCK] = board(xt[:, a:a + BLOCK].copy(), sr, reset=False).T
     return out
+
+
+def soft_clip(x: np.ndarray, ceiling_db: float = -1.0, knee: float = 0.5, oversample: int = 4) -> np.ndarray:
+    """Recorte suave: lineal hasta ``knee·techo``; encima, ``tanh`` con pendiente 1 en la rodilla
+    que tiende al techo sin superarlo. Se procesa sobremuestreado (polifásico) para que los
+    armónicos del recorte no se reflejen como aliasing; el filtro de vuelta puede sobrepasar el
+    techo unas décimas de dB en transitorios (como un clipper analógico), nunca la distorsión.
+    """
+    from scipy.signal import resample_poly
+    t = float(10 ** (ceiling_db / 20))
+    k = float(np.clip(knee, 0.0, 0.99)) * t
+    def shape(v):
+        a = np.abs(v)
+        over = a > k
+        out = v.copy()
+        out[over] = np.sign(v[over]) * (k + (t - k) * np.tanh((a[over] - k) / (t - k)))
+        return out
+    x = np.asarray(x, dtype=np.float64)
+    if np.abs(x).max() <= k:
+        return x.astype(np.float32)                     # nada que recortar: bit-exacto
+    if oversample <= 1:
+        return shape(x).astype(np.float32)
+    up = resample_poly(x, oversample, 1, axis=0)
+    return resample_poly(shape(up), 1, oversample, axis=0)[: len(x)].astype(np.float32)
 
 
 def stereo(x: np.ndarray, sr: int, width, mono_below_hz: float = 0.0) -> np.ndarray:
