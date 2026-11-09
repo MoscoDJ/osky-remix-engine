@@ -39,6 +39,7 @@ class AssetKind(str, Enum):
     plugin_state = "plugin_state"
     analysis = "analysis"
     reference = "reference"     # pista comercial de referencia (comparación de mezcla)
+    lyrics = "lyrics"           # letra sincronizada (LRC): tiempos por línea
 
 
 class Provenance(Strict):

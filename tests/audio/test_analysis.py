@@ -148,3 +148,37 @@ def test_analysis_accepts_stems_a_few_samples_off(tmp_path, pop):
     sf.write(stem, x[:-300], SR)                       # ~7 ms más corto, como algunos separadores
     rep = run_analysis(mix, {'vocals': stem})
     assert rep.sources["vocal_activity"] == "stem vocals"
+
+
+def test_constant_tempo_with_long_breakdown_and_loud_offbeat_hats():
+    """Techno a 125 BPM: 48 s de bombo + hats abiertos a contratiempo, 45 s de break sin bombo
+    (pad y barrido de ruido) y 48 s de bombo otra vez. El rastreador deriva en el break; la
+    rejilla debe ser una sola, a 125 BPM, y caer en los bombos (no en los hats) a ambos lados."""
+    from scipy.signal import butter, sosfilt
+    sr, bpm = 44100, 125.0
+    spb = 60 / bpm
+    n_beats = int(141 / spb)
+    y = np.zeros(int((n_beats + 2) * spb * sr))
+    rng = np.random.default_rng(4)
+    t = np.arange(int(0.25 * sr)) / sr
+    kick = np.sin(2 * np.pi * np.cumsum(50 + 120 * np.exp(-t * 40)) / sr) * np.exp(-t * 14) * 0.8
+    hat = sosfilt(butter(4, 7000, "high", fs=sr, output="sos"), rng.standard_normal(int(0.12 * sr))) \
+        * np.exp(-np.arange(int(0.12 * sr)) / sr * 30) * 0.5
+    brk = range(int(48 / spb), int(93 / spb))
+    kicks = []
+    for b in range(n_beats):
+        a = int(round(b * spb * sr))
+        if b not in brk:
+            y[a:a + len(kick)] += kick
+            kicks.append(a)
+            h = int(round((b + 0.5) * spb * sr))
+            y[h:h + len(hat)] += hat
+    s0, s1 = int(brk[0] * spb * sr), int(brk[-1] * spb * sr)
+    tt = np.arange(s1 - s0) / sr
+    y[s0:s1] += 0.15 * sum(np.sin(2 * np.pi * f * tt) for f in (146.8, 174.6, 220.0)) \
+        + 0.05 * sosfilt(butter(2, 2000, "high", fs=sr, output="sos"), rng.standard_normal(s1 - s0)) * (tt / tt[-1])
+    r = analyze_rhythm(np.stack([y, y], 1).astype(np.float32), sr)
+    assert len(r.segments) == 1 and r.segments[0].bpm == pytest.approx(bpm, abs=0.01)
+    beats = np.array(r.beats)
+    err = [np.min(np.abs(beats - k)) / sr * 1000 for k in kicks]
+    assert np.median(err) < 5 and np.max(err) < 15              # en el bombo, no a contratiempo (240 ms)

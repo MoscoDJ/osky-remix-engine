@@ -50,6 +50,9 @@ class ComposeContext:
     reference: object | None = None               # analysis.midi_ref.Reference
     vocal_env: np.ndarray | None = None           # energía (dB) del stem de voz original, cada 10 ms
     melody_provider: Callable[[int, int], list[tuple[float, float, int]]] | None = None
+    lyrics: list | None = None                    # song_form.LyricLine (letra sincronizada)
+    key_segments: list[tuple[int, int, str]] = field(default_factory=list)   # (muestra, muestra, "D minor")
+    loops: dict = field(default_factory=dict)     # rol -> {"sha", "beats", "frames", "sr", "gain_db"}
 
     @property
     def ratio(self) -> float:
@@ -153,4 +156,5 @@ def build_context(report: AnalysisReport, region_start_s: float, bpm: float, see
     key = next((k.key for k in report.harmony.key_segments if k.start <= start < k.end), report.harmony.key.value)
     chords = [(c.start, c.end, c.label) for c in report.harmony.chords]
     return ComposeContext(bpm=bpm, key=key, source_bpm=seg.bpm, beats=beats, b0=b0, chords_src=chords, seed=seed,
-                          downbeats=downs, sr=sr)
+                          downbeats=downs, sr=sr,
+                          key_segments=[(k.start, k.end, k.key) for k in report.harmony.key_segments])

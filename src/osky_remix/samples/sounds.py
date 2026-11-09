@@ -40,6 +40,7 @@ class ResolvedSounds:
     presets: dict[str, str] = field(default_factory=dict)       # rol -> sha (fxp o kit)
     assets: list[Asset] = field(default_factory=list)
     params: dict[str, dict] = field(default_factory=dict)       # rol -> parámetros estáticos de Surge
+    loops: dict[str, dict] = field(default_factory=dict)        # rol -> {"sha", "beats", "frames", "sr", "gain_db"}
     log: list[str] = field(default_factory=list)
 
 
@@ -97,7 +98,7 @@ def key_shift(note: str | None, key: str, max_st: int = 4) -> float:
     return float(best) if abs(best) <= max_st else 0.0
 
 
-def resolve(spec_path: Path, repo, key: str, sr: int, lib=None) -> ResolvedSounds:
+def resolve(spec_path: Path, repo, key: str, sr: int, lib=None, bpm: float | None = None) -> ResolvedSounds:
     """Registra en el almacén del proyecto los presets y samples del juego y construye los kits."""
     import soundfile as sf
     spec = json.loads(Path(spec_path).read_text())
@@ -158,6 +159,21 @@ def resolve(spec_path: Path, repo, key: str, sr: int, lib=None) -> ResolvedSound
                     parents=[b["sample"] for b in built.values()]), name=f"kit {role}.json")
             out.presets[role] = kit.sha256
             out.assets.append(kit)
+    for role, v in spec.get("loops", {}).items():
+        if lib is None:
+            from .library import SampleLibrary
+            lib = SampleLibrary()
+        h = lib.resolve(v["sample"])
+        f = h.features
+        if not f.get("bpm"):
+            raise ValueError(f"loop {role}: {h.name} no se reconoce como loop (sin BPM medido)")
+        smp = repo.assets.ingest(lib.path(h.sha), AssetKind.sample, Provenance(
+            tool="sample-library", params={"library_sha": h.sha, "category": h.category}), name=h.name)
+        out.assets.append(smp)
+        beats = int(round(f["duration_s"] * f["bpm"] / 60))
+        out.loops[role] = {"sha": smp.sha256, "beats": beats, "frames": smp.frames, "sr": smp.sample_rate, "bpm": float(f["bpm"]),
+                           "gain_db": float(v.get("gain_db", 0.0))}
+        out.log.append(f"loop {role}: {h.name} ({beats} tiempos, {float(v.get('gain_db', 0.0)):+.1f} dB)")
     return out
 
 

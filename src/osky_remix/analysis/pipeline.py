@@ -14,7 +14,7 @@ from .harmony import Harmony, analyze_harmony
 from .structure import Structure, analyze_structure
 from .tempo import Rhythm, analyze_rhythm
 
-ANALYSIS_VERSION = "2.1.0"
+ANALYSIS_VERSION = "2.2.0"   # 2.2: rejilla por coherencia de ataques (tempo constante con breaks)
 
 
 class AnalysisReport(BaseModel):

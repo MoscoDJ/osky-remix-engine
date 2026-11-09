@@ -1,0 +1,546 @@
+{
+  "name": "melodic_techno_song",
+  "description": "Melodic techno con la canción completa: la letra entera en orden (bloques cortados en silencios) y tramos instrumentales en las fronteras naturales (subida, drop, break, drop final). Groove con swing, bajo rodante, gancho propio derivado del coro. Referencias: Boris Brejcha, 125 BPM.",
+  "bpm": 125,
+  "bpm_range": [
+    122,
+    128
+  ],
+  "master_profile": "melodic_techno_club",
+  "instruments": {
+    "bass": {
+      "surge_preset": "Basses/Rubber Bass",
+      "range": [
+        33,
+        45
+      ]
+    },
+    "pad": {
+      "surge_preset": "Pads/Pad 1",
+      "range": [
+        50,
+        74
+      ]
+    },
+    "arp": {
+      "surge_preset": "Plucks/Lo-Fi Pluck",
+      "range": [
+        62,
+        86
+      ]
+    },
+    "lead": {
+      "surge_preset": "Leads/Moogy Saw",
+      "register": 79
+    }
+  },
+  "buses": {
+    "drumbus": {
+      "fx": [
+        {
+          "uri": "compressor",
+          "params": {
+            "threshold_db": -19,
+            "ratio": 2.5,
+            "attack_ms": 20,
+            "release_ms": 120
+          }
+        }
+      ],
+      "gain_db": 5.0
+    }
+  },
+  "returns": {
+    "verb": {
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "reverb",
+          "params": {
+            "size": 0.92,
+            "damping": 0.6,
+            "wet": 1.0
+          }
+        }
+      ]
+    },
+    "echo": {
+      "fx": [
+        {
+          "uri": "delay",
+          "params": {
+            "beats": 0.75,
+            "feedback": 0.45,
+            "mix": 1.0
+          }
+        },
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 400
+          }
+        },
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 6000
+          }
+        }
+      ]
+    }
+  },
+  "mix": {
+    "kick": {
+      "gain_db": 1.0,
+      "output": "drumbus"
+    },
+    "drums": {
+      "gain_db": -8.0,
+      "output": "drumbus",
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 180
+          }
+        }
+      ]
+    },
+    "bass": {
+      "gain_db": 2.0,
+      "sidechain_from": "kick",
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 35
+          }
+        },
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 8000
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.75,
+            "release_ms": 130
+          }
+        }
+      ]
+    },
+    "pad": {
+      "gain_db": -7.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -8
+        }
+      ],
+      "fx": [
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 4500
+          }
+        },
+        {
+          "uri": "stereo",
+          "params": {
+            "width": 1.15
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.6,
+            "release_ms": 180
+          }
+        }
+      ]
+    },
+    "arp": {
+      "gain_db": -10.0,
+      "pan": 0.15,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -12
+        }
+      ],
+      "fx": [
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 9000
+          }
+        },
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "delay",
+          "params": {
+            "beats": 0.75,
+            "feedback": 0.45,
+            "mix": 0.3
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.5,
+            "release_ms": 150
+          }
+        }
+      ]
+    },
+    "lead": {
+      "gain_db": -6.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -8
+        },
+        {
+          "target": "echo",
+          "level_db": -10
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 200
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.45,
+            "release_ms": 150
+          }
+        },
+        {
+          "uri": "lowpass",
+          "params": {
+            "hz": 8000
+          }
+        }
+      ]
+    },
+    "fx": {
+      "gain_db": -11.0,
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -4
+        }
+      ]
+    },
+    "vox": {
+      "gain_db": 0.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "verb",
+          "level_db": -9
+        },
+        {
+          "target": "echo",
+          "level_db": -14
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 140
+          }
+        },
+        {
+          "uri": "compressor",
+          "params": {
+            "threshold_db": -22,
+            "ratio": 3.5
+          }
+        },
+        {
+          "uri": "eq",
+          "params": {
+            "high_db": 1.0,
+            "high_hz": 6000
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.2,
+            "release_ms": 120
+          }
+        }
+      ]
+    },
+    "chops": {
+      "gain_db": -3.0,
+      "sidechain_from": "kick",
+      "sends": [
+        {
+          "target": "echo",
+          "level_db": -4
+        },
+        {
+          "target": "verb",
+          "level_db": -8
+        }
+      ],
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 250
+          }
+        },
+        {
+          "uri": "sidechain",
+          "params": {
+            "depth": 0.3,
+            "release_ms": 120
+          }
+        }
+      ]
+    },
+    "perc": {
+      "gain_db": -3.0,
+      "output": "drumbus",
+      "fx": [
+        {
+          "uri": "highpass",
+          "params": {
+            "hz": 300
+          }
+        }
+      ]
+    }
+  },
+  "form": "song",
+  "song_form": {
+    "swing": 0.56,
+    "recipes": {
+      "intro": {
+        "bars": 32,
+        "energy": 1,
+        "kick": true,
+        "tops": 1,
+        "tops_from_bar": 8,
+        "bass": "pulse",
+        "bass_from_bar": 16,
+        "hook": "teaser",
+        "hook_from_bar": 16,
+        "loops": [
+          "perc"
+        ],
+        "loops_from_bar": 8,
+        "fx": [
+          "riser_end"
+        ],
+        "automation": [
+          {
+            "track": "lead",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 600,
+            "to": 3000,
+            "from_bar": 16
+          },
+          {
+            "track": "bass",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 400,
+            "to": 2500,
+            "from_bar": 16
+          }
+        ]
+      },
+      "estrofa": {
+        "energy": 2,
+        "kick": true,
+        "tops": 1,
+        "bass": "light",
+        "pad": true,
+        "hook": "answers",
+        "loops": [
+          "perc"
+        ]
+      },
+      "subida": {
+        "bars": 16,
+        "energy": 2,
+        "kick": "phrase_drop",
+        "tops": 2,
+        "bass": "rolling",
+        "arp": true,
+        "snare_build": 8,
+        "loops": [
+          "perc",
+          "top"
+        ],
+        "fx": [
+          "riser_end"
+        ],
+        "automation": [
+          {
+            "track": "arp",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 800,
+            "to": 9000
+          },
+          {
+            "track": "drums",
+            "fx": "highpass",
+            "param": "hz",
+            "from": 180,
+            "to": 900,
+            "from_bar": 8
+          }
+        ]
+      },
+      "coro": {
+        "energy": 3,
+        "kick": true,
+        "tops": 2,
+        "bass": "rolling",
+        "pad": true,
+        "arp": true,
+        "hook": "answers",
+        "loops": [
+          "perc",
+          "top"
+        ],
+        "fx": [
+          "impact_start"
+        ]
+      },
+      "drop": {
+        "bars": 32,
+        "energy": 3,
+        "kick": true,
+        "tops": 3,
+        "bass": "rolling_fifth",
+        "arp": true,
+        "hook": "full",
+        "loops": [
+          "perc",
+          "top"
+        ],
+        "fx": [
+          "riser_end"
+        ]
+      },
+      "break": {
+        "bars": 24,
+        "energy": 1,
+        "pad": true,
+        "hook": "soft",
+        "bass": "sustained",
+        "fx": [
+          "downlifter_start",
+          "riser_end"
+        ],
+        "kick": false,
+        "tops": 1,
+        "tops_from_bar": 16,
+        "snare_build": 8,
+        "automation": [
+          {
+            "track": "pad",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 1500,
+            "to": 6000
+          },
+          {
+            "track": "lead",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 1800,
+            "to": 9000
+          }
+        ]
+      },
+      "regreso": {
+        "energy": 2,
+        "kick": true,
+        "tops": 1,
+        "bass": "light",
+        "pad": true,
+        "hook": "answers",
+        "loops": [
+          "perc"
+        ],
+        "fx": [
+          "impact_start"
+        ]
+      },
+      "drop_final": {
+        "bars": 32,
+        "energy": 3,
+        "kick": true,
+        "tops": 3,
+        "bass": "rolling_fifth",
+        "arp": true,
+        "hook": "full",
+        "pad": true,
+        "loops": [
+          "perc",
+          "top"
+        ],
+        "fx": [
+          "impact_start"
+        ]
+      },
+      "outro": {
+        "bars": 24,
+        "energy": 1,
+        "kick": true,
+        "tops": 1,
+        "bass": "pulse",
+        "loops": [
+          "perc"
+        ],
+        "automation": [
+          {
+            "track": "bass",
+            "fx": "lowpass",
+            "param": "hz",
+            "from": 8000,
+            "to": 500,
+            "from_bar": 8
+          }
+        ]
+      },
+      "libre": {
+        "energy": 1,
+        "pad": true,
+        "fx": [
+          "riser_end"
+        ]
+      }
+    }
+  }
+}

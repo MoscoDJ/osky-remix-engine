@@ -24,7 +24,8 @@ from .context import ComposeContext
 from .theory import BAR, TICKS_PER_BEAT, key_scale
 
 TEMPLATES = REPO_ROOT / "templates"
-TRACK_ORDER = ["kick", "drums", "bass", "pad", "arp", "lead", "fx", "vox", "chops"]
+TRACK_ORDER = ["kick", "drums", "perc", "bass", "sub", "pad", "arp", "lead", "fx", "vox", "chops"]
+AUDIO_TRACKS = ("vox", "chops", "perc")
 DEFAULT_ENERGY = {"intro": 1, "break": 1, "outro": 1, "voz": 2, "verso": 2, "pre": 2, "puente": 2, "build": 2,
                   "drop": 3, "drop2": 3, "coro2": 3}
 
@@ -216,12 +217,13 @@ def _marker_ops(secs: list[dict], prefix: str) -> list[dict]:
     ops, tick = [], 0
     for s in secs:
         ops.append({"op": "add_marker", "marker": {"id": f"{prefix}m-{s['name']}", "tick": tick, "label": s["name"]}})
-        tick += s["bars"] * BAR
+        tick += s.get("ticks", s["bars"] * BAR)          # piezas con compases irregulares: ticks exactos
     return ops
 
 
 def section_meta(secs: list[dict]) -> list[dict]:
     return [{"name": s["name"], "bars": s["bars"], "energy": s.get("energy", 2), "vocal": bool(s.get("vocal")),
+             **({"type": s["type"]} if "type" in s else {}),
              **({"region": s["_region"]} if "_region" in s else {})} for s in secs]
 
 
@@ -267,11 +269,17 @@ def arrange(tpl: dict, ctx: ComposeContext, bars: int, presets: dict[str, str], 
             preset_params: dict[str, dict] | None = None) -> Plan:
     """``presets``: rol -> sha ya registrado: .fxp para los sintes, kit de samples para kick, drums
     y fx (ausente: instrumento integrado). ``preset_params``: parámetros estáticos de Surge por rol."""
-    parts = generate_parts(tpl, ctx, bars, prefix, variant)
+    if tpl.get("form") == "song":
+        from .song_form import generate_song_parts
+        parts = generate_song_parts(tpl, ctx, prefix, variant)
+    else:
+        parts = generate_parts(tpl, ctx, bars, prefix, variant)
     tracks = [t for t in TRACK_ORDER if t in parts.used]
-    ops: list[dict] = [{"op": "set_tempo", "points": [{"tick": 0, "bpm": ctx.bpm}]}, {"op": "set_key", "key": _short_key(ctx.key)}]
+    tempo = getattr(parts, "tempo", None) or [(0, ctx.bpm)]
+    ops: list[dict] = [{"op": "set_tempo", "points": [{"tick": t, "bpm": b} for t, b in tempo]},
+                       {"op": "set_key", "key": _short_key(ctx.key)}]
     for t in tracks:
-        kind = "audio" if t in ("vox", "chops") else "instrument"
+        kind = "audio" if t in AUDIO_TRACKS else "instrument"
         ops.append({"op": "add_track", "id": t, "name": t.capitalize(), "kind": kind})
         if kind == "instrument":
             if t in ("kick", "drums", "fx"):

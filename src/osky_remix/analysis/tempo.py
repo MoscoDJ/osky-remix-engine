@@ -16,6 +16,9 @@ from .common import AN_SR, HOP, Alternative, Estimate, clip01, resample_mono
 
 
 RUBATO_REL = 0.04     # residuo > 4 % del periodo: el tramo no tiene rejilla (tempo libre)
+COMB_MIN_INLIERS = 0.6   # rejilla por coherencia de ataques: fracción mínima de beats sobre ella
+COMB_GLOBAL_MIN_INLIERS = 0.5   # rejilla única de todo el track cuando los tramos quedan fragmentados
+MIN_SEGMENT_BEATS = 16   # un cambio de tempo de menos de 4 compases no se acepta como tramo
 
 
 class TempoSegment(BaseModel):
@@ -136,6 +139,49 @@ def _tempo_zones(oenv: np.ndarray, sr: int, hop: int, ref_bpm: float, rel_tol: f
         else:
             merged.append(z)
     return [(a, b, bpm) for a, b, bpm in merged]
+
+
+def _comb_grid(times: np.ndarray, period: float, fine: np.ndarray, sr: int, hop: int,
+               span: float = 0.01) -> tuple[float, float, float, float] | None:
+    """Rejilla de periodo constante por coherencia de fase de los ataques del tramo.
+
+    Para tempo constante con breaks largos (electrónica): el rastreador de beats deriva sin
+    bombo y esos beats sesgan el ajuste lineal (125.002 BPM medía 125.28 y residuo > 60 ms).
+    Se busca el periodo, en ±``span`` alrededor del estimado, que maximiza |Σ e·exp(2πi·t/p)|
+    sobre la envolvente de ataques; la fase, de la media circular de los beats. Devuelve (p, t0, fracción de
+    beats a < 10 % del periodo de la rejilla, residuo de esos beats en ms) o None.
+    """
+    a = int(max(0, (times[0] - period) * sr / hop))
+    b = int(min(len(fine), (times[-1] + period) * sr / hop))
+    dec = 4                                                        # ~6 ms por cuadro
+    e = fine[a:b]
+    e = e[: len(e) // dec * dec].reshape(-1, dec).sum(1)
+    if len(e) < 16 or not np.any(e):
+        return None
+    t = (a + np.arange(len(e)) * dec + dec / 2) * hop / sr
+    def coherence(ps):
+        out = np.empty(len(ps), complex)
+        for i in range(0, len(ps), 64):
+            ph = np.exp(2j * np.pi * t[None, :] / ps[i:i + 64, None])
+            out[i:i + 64] = ph @ e
+        return out
+    ps = period * np.linspace(1 - span, 1 + span, 801)
+    z = coherence(ps)
+    j = int(np.argmax(np.abs(z)))
+    lo, hi = ps[max(0, j - 1)], ps[min(len(ps) - 1, j + 1)]
+    ps2 = np.linspace(lo, hi, 201)
+    z2 = coherence(ps2)
+    j2 = int(np.argmax(np.abs(z2)))
+    p = float(ps2[j2])
+    # fase: media circular de los beats detectados (anclados al bombo); la de la envolvente puede
+    # caer a contratiempo (los hats abiertos dominan la derivada logarítmica de energía)
+    t0 = float((np.angle(np.exp(2j * np.pi * times / p).mean()) / (2 * np.pi)) % 1 * p)
+    r = (times - t0) / p
+    res = (r - np.round(r)) * p
+    inl = np.abs(res) < 0.1 * p
+    if not inl.any():
+        return None
+    return p, t0, float(inl.mean()), float(np.std(res[inl]) * 1000)
 
 
 def _fit_grid(times: np.ndarray, period: float) -> tuple[float, float, float, np.ndarray]:
@@ -284,14 +330,25 @@ def analyze_rhythm(audio: np.ndarray, sr: int) -> Rhythm:
     grids: list[np.ndarray] = []
     for a, b in _segment_beats(bt):
         tt = bt[a:b]
+        if len(tt) < MIN_SEGMENT_BEATS:
+            continue                                     # p. ej. 4 s "a 177 BPM" en un break
         p, t0, res_ms, k = _fit_grid(tt, float(np.median(np.diff(tt))))
         ks = np.arange(int(k.min()), int(k.max()) + 1)
         g = t0 + ks * p
         g = g + _refine_shift(g, fine, a_sr, fine_hop)      # compensa la latencia de la envolvente
         if res_ms > RUBATO_REL * p * 1000:
-            # los beats no siguen una rejilla: tempo libre (rubato), sin rejilla inventada
-            free[int(tt[0] * a_sr / hop):int((tt[-1] + p) * a_sr / hop) + 1] = True
-            continue
+            # ¿tempo constante con beats perdidos en breaks? rejilla por coherencia de ataques
+            comb = _comb_grid(tt, p, fine, a_sr, fine_hop)
+            if comb and comb[2] >= COMB_MIN_INLIERS and comb[3] <= RUBATO_REL * comb[0] * 1000:
+                p, t0c, _, res_ms = comb
+                k0 = int(np.floor((tt[0] - t0c) / p + 0.5))
+                k1 = int(np.floor((tt[-1] - t0c) / p + 0.5))
+                g = t0c + np.arange(k0, k1 + 1) * p
+                g = g + _refine_shift(g, fine, a_sr, fine_hop)
+            else:
+                # los beats no siguen una rejilla: tempo libre (rubato), sin rejilla inventada
+                free[int(tt[0] * a_sr / hop):int((tt[-1] + p) * a_sr / hop) + 1] = True
+                continue
         seg = TempoSegment(start=int(round(g[0] * sr)), end=int(round((g[-1] + p) * sr)),
                            bpm=round(60 / p, 3), residual_ms=round(res_ms, 2))
         if segs and abs(segs[-1].bpm - seg.bpm) / seg.bpm < 0.01:     # fusionar tramos casi iguales
@@ -300,6 +357,31 @@ def analyze_rhythm(audio: np.ndarray, sr: int) -> Rhythm:
         else:
             segs.append(seg)
             grids.append(g)
+    # ¿tempo constante partido por breaks largos? (tramos al tempo del principal cubren ≥ 60 % y
+    # los demás son cortos: p. ej. un break sin bombo donde el rastreador inventa "155 BPM")
+    span_s = max(bt[-1] - bt[0], 1e-9)
+    fragmented = not segs
+    if len(segs) > 1:
+        main_seg = max(segs, key=lambda x: x.end - x.start)
+        same = [x for x in segs if abs(x.bpm - main_seg.bpm) / main_seg.bpm < 0.01]
+        other = [x for x in segs if x not in same]
+        fragmented = (sum(x.end - x.start for x in same) / sr / span_s >= 0.6
+                      and all((x.end - x.start) / sr / span_s < 0.3 for x in other))
+    if fragmented and len(bt) >= 4 * MIN_SEGMENT_BEATS:
+        # una sola rejilla sobre todos los beats (se acepta solo si ≥ 50 % de los beats caen en ella)
+        p0 = 60 / max(segs, key=lambda x: x.end - x.start).bpm if segs else float(np.median(np.diff(bt)))
+        comb = _comb_grid(bt, p0, fine, a_sr, fine_hop)
+        if comb and comb[2] >= COMB_GLOBAL_MIN_INLIERS and comb[3] <= RUBATO_REL * comb[0] * 1000:
+            p, t0c, _, res_ms = comb
+            k0 = int(np.floor((bt[0] - t0c) / p + 0.5))
+            k1 = int(np.floor((bt[-1] - t0c) / p + 0.5))
+            g = t0c + np.arange(k0, k1 + 1) * p
+            g = g + _refine_shift(g, fine, a_sr, fine_hop)
+            segs = [TempoSegment(start=int(round(g[0] * sr)), end=int(round((g[-1] + p) * sr)),
+                                 bpm=round(60 / p, 3), residual_ms=round(res_ms, 2))]
+            grids = [g]
+            free[:] = False
+            free |= _free_regions(oenv, a_sr, hop)
     if not segs:
         raise ValueError("no se encontró ningún tramo con pulso estable (todo es tempo libre)")
     # librosa recorta beats débiles al inicio y final (intros/outros sin batería): se extrapola la
@@ -310,7 +392,9 @@ def analyze_rhythm(audio: np.ndarray, sr: int) -> Rhythm:
     p_last = 60 / segs[-1].bpm
     while is_loud(grids[-1][-1] + p_last):
         grids[-1] = np.r_[grids[-1], grids[-1][-1] + p_last]
-    segs[0].start = int(round(grids[0][0] * sr))
+    # el corrimiento fino puede dejar el primer beat unos ms antes del inicio: se fija en 0
+    grids[0] = np.maximum(grids[0][grids[0] > -0.25 * p_first], 0.0)
+    segs[0].start = max(0, int(round(grids[0][0] * sr)))
     segs[-1].end = int(round((grids[-1][-1] + p_last) * sr))
     merged = segs
     grid_s = np.concatenate(grids)

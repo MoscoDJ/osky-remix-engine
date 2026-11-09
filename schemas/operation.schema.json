@@ -270,7 +270,8 @@
         "preset",
         "plugin_state",
         "analysis",
-        "reference"
+        "reference",
+        "lyrics"
       ],
       "title": "AssetKind",
       "type": "string"

@@ -125,6 +125,7 @@ def compose(name: str,
             reference: Optional[str] = typer.Option(None, "--reference", help="sha del MIDI de referencia alineado"),
             harmony: str = typer.Option("auto", "--harmony", help="auto | midi | audio"),
             sounds: Optional[str] = typer.Option(None, "--sounds", help="juego de sonidos (workspace/sounds/<nombre>.json)"),
+            lyrics: Optional[Path] = typer.Option(None, "--lyrics", help="letra sincronizada .lrc (forma de canción)"),
             branch: Optional[str] = typer.Option(None, "--branch"),
             author: str = typer.Option("claude", "--author", "-a"),
             message: Optional[str] = typer.Option(None, "-m"),
@@ -142,6 +143,17 @@ def compose(name: str,
         _fail("--harmony debe ser auto, midi o audio")
     ctx, new_assets, cmeta = build_compose_context(repo, analysis, vocals, at, bars, bpm, seed, reference, harmony)
     cmeta["template"] = template
+    if lyrics is not None:
+        from ..composition.song_form import parse_lrc
+        if not lyrics.exists():
+            _fail(f"no existe la letra {lyrics}")
+        la = repo.assets.ingest(lyrics, AssetKind.lyrics, Provenance(tool="lrc", params={"file": lyrics.name}),
+                                name=lyrics.name)
+        new_assets.append(la)
+        ctx.lyrics = parse_lrc(lyrics.read_text(encoding="utf-8"))
+        cmeta["lyrics"] = la.sha256
+    elif tpl.get("form") == "song":
+        _fail("la plantilla usa forma de canción: falta --lyrics archivo.lrc")
     presets = {}
     if SURGE_XT_VST3.exists():
         for role, spec in tpl["instruments"].items():
@@ -159,13 +171,14 @@ def compose(name: str,
         from ..samples.sounds import resolve, sounds_path
         try:
             sp = sounds_path(sounds)
-            rs = resolve(sp, repo, ctx.key, ctx.sr)
+            rs = resolve(sp, repo, ctx.key, ctx.sr, bpm=ctx.bpm)
         except ValueError as e:
             _fail(str(e))
         if not SURGE_XT_VST3.exists():
             rs.presets = {k: v for k, v in rs.presets.items() if k in ("kick", "drums", "fx")}
         presets.update(rs.presets)
         preset_params = rs.params
+        ctx.loops = rs.loops
         new_assets += rs.assets
         cmeta["sounds"] = {"name": sp.stem, "sha256": sha256_file(sp)}
         if not as_json:

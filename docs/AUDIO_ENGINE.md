@@ -187,3 +187,44 @@ acierto de caché en la segunda llamada, distancias entre las 24 × 24 tonalidad
 Corrección de afinación a escala: no implementada. Requiere desplazamiento variable en el tiempo
 (mapa de tono de Rubber Band) guiado por f0 por nota; queda pendiente hasta poder verificarla
 con fixtures de afinación conocida.
+
+## Forma de canción (`composition/song_form.py`, plantillas `*_song`)
+
+La letra completa en su orden original; la música toma el poder donde no hay voz. Requiere la
+letra sincronizada (`compose --lyrics cancion.lrc`, asset `lyrics`) y la voz (`--vocals`).
+
+1. **Bloques de voz**: las líneas del LRC se agrupan; bloque nuevo tras > 6 s sin voz, cuando
+   cambia el modo (Re menor → Re mayor en el coro) o, si la canción no modula, cuando cambia entre
+   líneas que se repiten (coro) y que no. Una línea suelta no cambia el tipo.
+2. **Cortes en silencio**: cada bloque empieza 0.12 s antes del primer ataque de voz (medido en el
+   stem cerca de la marca del LRC, que señala el inicio de la línea) y termina tras el último
+   sonido más 0.6 s, sin pasar del ataque del bloque siguiente. El fundido final empieza después
+   del último sonido. Bloques contiguos en el original y seguidos en el remix se empalman en la
+   misma muestra, sin fundidos.
+3. **Ancla**: el tiempo fuerte del original que corresponde al primer compás del bloque (la
+   anacrusa de hasta 1.5 tiempos cae antes). Un compás del original = un compás del remix: la
+   armonía leída del original queda debajo de la voz. Verificado en "Mi Vida Eres Tú": 70 de 88
+   cambios de acorde caen en el tiempo 1 según los tiempos fuertes del análisis.
+4. **Piezas**: un compás irregular (2 tiempos) dentro de un bloque lo parte; la voz es un solo
+   clip y cada pieza reinicia la rejilla del remix en su tiempo fuerte (la sección dura los
+   tiempos exactos del original).
+5. **Tempo libre**: las líneas cantadas antes de la rejilla (intro rubato) forman la `apertura`,
+   sin batería, sobre un bordón del primer acorde.
+6. **Forma automática**: [apertura] → intro → estrofas → subida → coro 1 → drop → break → … →
+   coro final → drop final → outro. Los tramos instrumentales repiten 8 compases de la armonía de
+   su bloque. Las recetas por tipo de tramo están en `song_form.recipes` de cada plantilla.
+
+### Estilos
+
+| Plantilla | Tempo | Groove |
+|---|---|---|
+| `melodic_techno_song` | 125 | 4x4, hats con swing 56 %, bajo rodante (no toca en el bombo, salta a la octava), loops de percusión a 125 |
+| `dubstep_song` | intro/outro 125, cuerpo 75 (= 150 half-time) | `halfstep`: bombo en 1 y 3, snare+clap en 2 y 4 al tempo de la voz (el "3" de cada compás de 150); `wobble`: filtro con LFO triangular de 1–8 ciclos por tiempo que cambia cada 2 compases sobre un bajo saturado (gain + clipper); `sub` aparte |
+| `reggaeton_song` | ~1.06 × tempo de la voz | `dembow`: bombo en cada tiempo, caja en la 4.ª semicorchea y en el "y" de cada medio compás; 808 en tumbao; guitarra arpegiada |
+
+Gancho: el contorno de la primera frase del coro (transcrita de la voz), re-ritmado en
+semicorcheas sincopadas; en cada tiempo fuerte se ajusta a una nota del acorde. Frases de 8
+compases A A A' B. En los bloques de voz solo responde en compases donde la voz calla.
+
+Un tramo puede tener su propio tempo (`bpm` en la receta); los loops de audio solo suenan en
+tramos a su tempo, y los bloques de voz siempre van al tempo para el que se estiró la voz.
